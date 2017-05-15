@@ -64,7 +64,10 @@ def construct_embeddings_for_vocab(vocab_dict):
 
 
 def tokenize_paragraphs(paragraphs):
-    """Tokenizes paragraphs using spacy module and returns a copy of them."""
+    """Tokenizes paragraphs using spacy module and returns a copy of them.
+
+    nlp - Spacy object able to tokenize a string using nlp.tokenizer(string)
+    """
     tk_paragraphs = []
     for each_paragraph in paragraphs:
         tk_paragraph = {}
@@ -132,7 +135,7 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
     np_questions = np.zeros([m, max_question_words], dtype=int)
     np_answers = np.zeros([m, max_answer_words], dtype=int)
     np_contexts = np.zeros([m, max_context_words], dtype=int)
-    np_ids = np.zeros([m])
+    ids = []
     np_as = np.zeros([m, 2])
 
     for i, each_example in enumerate(examples):
@@ -140,18 +143,24 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
         question_tokens = question.split()
         answer_tokens = answer.split()
         context_tokens = context.split()
+        # assert len(question_tokens) <= max_question_words
+        # assert len(answer_tokens) <= max_answer_words
+        # assert len(context_tokens) <= max_context_words
         answer_end = answer_start + len(answer_tokens)
         for j, each_token in enumerate(question_tokens):
-            np_questions[i, j] = vocab_dict[each_token]
+            if j < max_question_words:
+                np_questions[i, j] = vocab_dict[each_token]
         for j, each_token in enumerate(answer_tokens):
-            np_answers[i, j] = vocab_dict[each_token]
+            if j < max_answer_words:
+                np_answers[i, j] = vocab_dict[each_token]
         for j, each_token in enumerate(context_tokens):
-            np_contexts[i, j] = vocab_dict[each_token]
-        np_ids[i] = id
+            if j < max_context_words:
+                np_contexts[i, j] = vocab_dict[each_token]
+        ids.append(id)
         np_as[i, 0] = answer_start
         np_as[i, 1] = answer_end
 
-    return np_questions, np_answers, np_contexts, np_ids, np_as
+    return np_questions, np_answers, np_contexts, ids, np_as
 
 
 class LSTM_Baseline_Test(unittest2.TestCase):
@@ -193,13 +202,13 @@ class LSTM_Baseline_Test(unittest2.TestCase):
 
     def test_generate_numpy_features_from_squad_examples_empty(self):
         """Test empty list of examples."""
-        np_questions, np_answers, np_contexts, np_ids, np_as \
+        np_questions, np_answers, np_contexts, ids, np_as \
             = generate_numpy_features_from_squad_examples([], {})
         assert np_questions.shape == (0, config.MAX_QUESTION_WORDS)
         assert np_answers.shape == (0, config.MAX_ANSWER_WORDS)
         assert np_contexts.shape == (0, config.MAX_CONTEXT_WORDS)
         #print(np_ids.shape)
-        assert np_ids.shape == (0,)
+        assert len(ids) == 0
         assert np_as.shape == (0, 2)
 
     def test_generate_numpy_features_from_squad_examples_single(self):
@@ -215,12 +224,12 @@ class LSTM_Baseline_Test(unittest2.TestCase):
                                                           question_tokens,
                                                           answer_tokens,
                                                           context_tokens]).token2id
-        np_questions, np_answers, np_contexts, np_ids, np_as \
+        np_questions, np_answers, np_contexts, ids, np_as \
             = generate_numpy_features_from_squad_examples([example], vocab_dict)
         assert np_questions.shape == (1, config.MAX_QUESTION_WORDS)
         assert np_answers.shape == (1, config.MAX_ANSWER_WORDS)
         assert np_contexts.shape == (1, config.MAX_CONTEXT_WORDS)
-        assert np_ids.shape == (1,)
+        assert len(ids) == 1
         assert np_as.shape == (1, 2)
         #print(np_questions)
         #print(np_answers)
@@ -249,12 +258,12 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         m = len(qacs_tuples)
         vocab = generate_vocabulary_for_paragraphs([tk_paragraph])
         vocab_dict = vocab.token2id
-        np_questions, np_answers, np_contexts, np_ids, np_as \
+        np_questions, np_answers, np_contexts, ids, np_as \
             = generate_numpy_features_from_squad_examples(qacs_tuples, vocab_dict)
         assert np_questions.shape == (m, config.MAX_QUESTION_WORDS)
         assert np_answers.shape == (m, config.MAX_ANSWER_WORDS)
         assert np_contexts.shape == (m, config.MAX_CONTEXT_WORDS)
-        assert np_ids.shape == (m,)
+        assert len(ids) == m
         assert np_as.shape == (m, 2)
         assert np.array_equal(np_contexts[0, :], np_contexts[1, :])
         assert np.array_equal(np_contexts[1, :], np_contexts[2, :])
