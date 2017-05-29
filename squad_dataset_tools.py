@@ -9,8 +9,8 @@ import spacy
 import numpy as np
 
 
-nlp = spacy.load('en_vectors_glove_md')  # python -m spacy download en
-#nlp = spacy.load('en')
+#nlp = spacy.load('en_vectors_glove_md')  # python -m spacy download en
+nlp = spacy.load('en')
 
 
 def load_squad_dataset_from_file(squad_filename):
@@ -148,13 +148,13 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
         # assert len(context_tokens) <= max_context_words
         answer_end = answer_start + len(answer_tokens)
         for j, each_token in enumerate(question_tokens):
-            if j < max_question_words:
+            if j < max_question_words and each_token in vocab_dict:
                 np_questions[i, j] = vocab_dict[each_token]
         for j, each_token in enumerate(answer_tokens):
-            if j < max_answer_words:
+            if j < max_answer_words and each_token in vocab_dict:
                 np_answers[i, j] = vocab_dict[each_token]
         for j, each_token in enumerate(context_tokens):
-            if j < max_context_words:
+            if j < max_context_words and each_token in vocab_dict:
                 np_contexts[i, j] = vocab_dict[each_token]
         ids.append(id)
         np_as[i, 0] = answer_start

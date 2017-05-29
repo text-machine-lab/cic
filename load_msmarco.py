@@ -13,7 +13,7 @@ resource.setrlimit(rsrc, (1024, hard))
 count = 0
 count_answer_in_passage = 0
 total_size_of_all_records = 0
-num_examples_to_print = 2000
+num_examples_to_print = 1
 translator = str.maketrans('', '', string.punctuation)
 for each_line in open(config.MS_MARCO_TRAIN_SET):
     record = json.loads(each_line)
@@ -32,14 +32,14 @@ for each_line in open(config.MS_MARCO_TRAIN_SET):
                         count_answer_in_passage += 1
                         break
                     else:
-                        print('Answer: %s' % formatted_answer)
-                        print('Passage: %s' % formatted_text)
-                        print()
+                        pass#print('Answer: %s' % formatted_answer)
+                        #print('Passage: %s' % formatted_text)
+                        #print()
 
         #print record[u'answers']
         #print record.keys()
         #print record[u'passages'][0]
-        #pprint.pprint(record)
+        pprint.pprint(record)
         #print()
     count += 1
 
