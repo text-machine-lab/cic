@@ -239,7 +239,7 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
                         answer_starts_here = False
                 if answer_starts_here:
                     for answer_index in range(len(answer_tokens)):
-                        if context_index + answer_index < config.MAX_CONTEXT_WORDS:
+                        if answer_index < config.MAX_ANSWER_WORDS and context_index + answer_index < config.MAX_CONTEXT_WORDS:
                             np_answers[i, answer_index] = context_index + answer_index + 1  # index 0 -> ''
         else:
             for j, each_token in enumerate(answer_tokens):

@@ -7,10 +7,10 @@ import baseline_model
 import pprint
 import numpy as np
 
-LEARNING_RATE = .00005
-NUM_PARAGRAPHS = 50
-LSTM_HIDDEN_DIM = 1600
-NUM_EPOCHS = 100
+LEARNING_RATE = .0001
+NUM_PARAGRAPHS = 250 # 18000
+LSTM_HIDDEN_DIM = 800
+NUM_EPOCHS = 0
 NUM_EXAMPLES_TO_PRINT = 10
 
 print('Loading SQuAD dataset')
@@ -29,9 +29,28 @@ examples = sdt.convert_paragraphs_to_flat_format(tk_paragraphs)
 print('Converting each example to numpy arrays')
 np_questions, np_answers, np_contexts, ids, np_as \
     = sdt.generate_numpy_features_from_squad_examples(examples, vocab_dict, answer_indices_from_context=True)
+
 print('Maximum index in answers should be less than max context size + 1: %s' % np_answers.max())
 num_examples = np_questions.shape[0]
 print('Number of examples: %s' % np_questions.shape[0])
+
+contexts = [example[2] for example in examples]
+context_lengths = []
+for each_context in contexts:
+    context_tokens = each_context.split()
+    context_lengths.append(len(context_tokens))
+
+print('Average context length: %s' % np.mean(context_lengths))
+print('Context length deviation: %s' % np.std(context_lengths))
+print('Max context length: %s' % np.max(context_lengths))
+
+
+num_empty_answers = 0
+for i in range(np_answers.shape[0]):
+    if np.isclose(np_answers[i], np.zeros([config.MAX_ANSWER_WORDS])).all():
+        num_empty_answers += 1
+print('Fraction of empty answer vectors (should be zero): %s' % (num_empty_answers / num_examples))
+
 print('Loading embeddings for each word in vocabulary')
 np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict)
 
@@ -140,7 +159,12 @@ np_predictions_indices = sess.run(tf_predictions_indices, feed_dict={tf_question
                                                                      tf_context_indices: np_contexts,
                                                                      tf_batch_size: num_examples})
 
-contexts = [example[2] for example in examples]
+num_predictions_correct = 0
+for i in range(np_predictions_indices.shape[0]):
+    if np.isclose(np_predictions_indices[i, :], np_answers[i, :]).all():
+        num_predictions_correct += 1
+
+print('EM Score: %s' % (num_predictions_correct / num_examples))
 
 predictions = sdt.convert_numpy_array_answers_to_strings(np_predictions_indices[:NUM_EXAMPLES_TO_PRINT, :], contexts[:NUM_EXAMPLES_TO_PRINT])
 for i, each_prediction in enumerate(predictions):
@@ -149,6 +173,9 @@ for i, each_prediction in enumerate(predictions):
     print('Prediction array: %s' % np_predictions_indices[i, :])
     print('Answer array: %s' % np_answers[i, :])
     print('Question: %s' % examples[i][0])
+
+
+
 
 print()
 
