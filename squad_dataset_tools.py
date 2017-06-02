@@ -72,7 +72,7 @@ def convert_numpy_array_to_strings(np_examples, vocabulary):
     return examples
 
 
-def convert_numpy_array_answers_to_strings(np_answers, contexts):
+def convert_numpy_array_answers_to_strings(np_answers, contexts, answer_is_span=False):
     """Converts a numpy array of answer indices into a list of strings.
     Indices are taken from the context of each answer.
 
@@ -81,6 +81,8 @@ def convert_numpy_array_answers_to_strings(np_answers, contexts):
     vocab_dict - where vocab_dict[index] gives a word in the vocabulary
     with that index
     contexts - list of contexts, one for each answer
+    answer_is_span - answer array contains start and end indices of array,
+    instead of sequence of indices
 
     Returns: a list of strings, where each string is constructed from
     indices in the array as they appear in the context."""
@@ -89,15 +91,20 @@ def convert_numpy_array_answers_to_strings(np_answers, contexts):
     assert m == len(contexts)
     answer_strings = []
     for i in range(m):
-        answer_string = ''
         context_tokens = contexts[i].split()
-        for j in range(n):
-            if np_answers[i, j] != 0:
-                context_index = np_answers[i, j] - 1  # was shifted for index 0 -> ''
-                if context_index < len(context_tokens):
-                    if j > 0:
-                        answer_string += ' '
-                    answer_string += context_tokens[context_index]
+        if answer_is_span:
+            start_index = np_answers[i, 0]
+            end_index = np_answers[i, 1]
+            answer_string = ' '.join(context_tokens[start_index:end_index+1])
+        else:
+            answer_string = ''
+            for j in range(n):
+                if np_answers[i, j] != 0:
+                    context_index = np_answers[i, j] - 1  # was shifted for index 0 -> ''
+                    if context_index < len(context_tokens):
+                        if j > 0:
+                            answer_string += ' '
+                        answer_string += context_tokens[context_index]
         answer_strings.append(answer_string)
     return answer_strings
 
@@ -185,7 +192,8 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
                                                 max_question_words=config.MAX_QUESTION_WORDS,
                                                 max_answer_words=config.MAX_ANSWER_WORDS,
                                                 max_context_words=config.MAX_CONTEXT_WORDS,
-                                                answer_indices_from_context=False):
+                                                answer_indices_from_context=False,
+                                                answer_is_span=False):
     """Uses a list of squad QA examples to generate features for a QA model. Features are numpy arrays for
     questions, answers, and contexts, where each word is represented as an index in a vocabulary. Answer
     indices can either be taken from general vocabulary or context vocabulary.
@@ -196,15 +204,22 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
     max_answer_words - max length of vector containing answer word ids
     max_context_words - max length of vector containing context word ids
     answer_indices_from_context - if true, words in each answer will be represented as the indices of matching words
-    in the context (+1 for each index, leaving room for index 0 -> '').
+    in the context (+1 for each index, leaving room for index 0 -> ''). Answers should appear exactly in context
     Otherwise, words in each answer will be represented as indices from vocabulary vocab_dict
+    answer_is_span - if true, each answer will be two indices, one for the index of the first token in the answer,
+    and one for the index of the second token. Can only be true if answer_indices_from_context is true
 
     Returns: where m is the number of examples, an m x max_question_words array for questions, an m x max_answer_words
     array for answers, and an m x max_context_words array for context, an m-dimensional vector
     for question ids and an m by 2 vector for answer_starts/ends. Ie. returns (np_questions, np_answers, np_contexts, np_ids, np_as)."""
+    if answer_is_span:
+        assert answer_indices_from_context
     m = len(examples)
     np_questions = np.zeros([m, max_question_words], dtype=int)
-    np_answers = np.zeros([m, max_answer_words], dtype=int)
+    if answer_is_span:
+        np_answers = np.zeros([m, 2], dtype=int)
+    else:
+        np_answers = np.zeros([m, max_answer_words], dtype=int)
     np_contexts = np.zeros([m, max_context_words], dtype=int)
     ids = []
     np_as = np.zeros([m, 2])
@@ -238,9 +253,14 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
                     if context_index + answer_index >= len(context_tokens) or context_tokens[context_index + answer_index] != each_answer_token:
                         answer_starts_here = False
                 if answer_starts_here:
-                    for answer_index in range(len(answer_tokens)):
-                        if answer_index < config.MAX_ANSWER_WORDS and context_index + answer_index < config.MAX_CONTEXT_WORDS:
-                            np_answers[i, answer_index] = context_index + answer_index + 1  # index 0 -> ''
+                    if answer_is_span:
+                        if context_index + len(answer_tokens) - 1 < config.MAX_CONTEXT_WORDS:
+                            np_answers[i, 0] = context_index
+                            np_answers[i, 1] = context_index + len(answer_tokens) - 1
+                    else:
+                        for answer_index in range(len(answer_tokens)):
+                            if answer_index < config.MAX_ANSWER_WORDS and context_index + answer_index < config.MAX_CONTEXT_WORDS:
+                                np_answers[i, answer_index] = context_index + answer_index + 1  # index 0 -> ''
         else:
             for j, each_token in enumerate(answer_tokens):
                 if j < max_answer_words and each_token in vocab_dict:
@@ -405,7 +425,6 @@ class LSTM_Baseline_Test(unittest2.TestCase):
 
     def test_construct_embeddings_for_vocab(self):
         vocab_dict = {'': 0, 'apples': 2, 'oranges': 1}
-        m = len(vocab_dict.keys())
         np_embeddings = construct_embeddings_for_vocab(vocab_dict)
         assert np_embeddings.shape == (3, 300)
         print(np_embeddings[0, :])
@@ -441,6 +460,24 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         print(vocabulary)
         questions = convert_numpy_array_to_strings(np_questions, vocabulary)
         answers = convert_numpy_array_answers_to_strings(np_answers, contexts)
+        contexts = convert_numpy_array_to_strings(np_contexts, vocabulary)
+        for i, each_example in enumerate(examples):
+            assert questions[i] == each_example[0].lower()
+            assert answers[i] == each_example[1].lower()
+            assert contexts[i] == each_example[2].lower()
+
+    def test_convert_numpy_array_answers_to_strings_answer_is_span(self):
+        examples = convert_paragraphs_to_flat_format([self.paragraph])
+        contexts = [example[2] for example in examples]
+        vocab_dict = generate_vocabulary_for_paragraphs([self.paragraph]).token2id
+        print(vocab_dict)
+        np_questions, np_answers, np_contexts, ids, np_as = \
+            generate_numpy_features_from_squad_examples(examples, vocab_dict, answer_indices_from_context=True,
+                                                        answer_is_span=True)
+        vocabulary = invert_dictionary(vocab_dict)
+        print(vocabulary)
+        questions = convert_numpy_array_to_strings(np_questions, vocabulary)
+        answers = convert_numpy_array_answers_to_strings(np_answers, contexts, answer_is_span=True)
         contexts = convert_numpy_array_to_strings(np_contexts, vocabulary)
         for i, each_example in enumerate(examples):
             assert questions[i] == each_example[0].lower()

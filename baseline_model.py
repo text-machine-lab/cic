@@ -14,6 +14,13 @@ class LSTMBaselineModel:
         pass
 
 
+def create_tensorboard_visualization(model_name):
+    """Saves the Tensorflow graph of your model, so you can view it in a TensorBoard console."""
+    print('Creating Tensorboard visualization')
+    writer = tf.summary.FileWriter("/tmp/" + model_name + "/")
+    writer.add_graph(tf.get_default_graph())
+
+
 def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=None,
               reuse=False, time_step_inputs=None):
     """Runs an LSTM over input data and returns LSTM output and hidden state. Arguments:
