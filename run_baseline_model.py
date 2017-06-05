@@ -9,10 +9,15 @@ import numpy as np
 
 LEARNING_RATE = .0001
 NUM_PARAGRAPHS = 10000 # 18000
-LSTM_HIDDEN_DIM = 800
-NUM_EPOCHS = 5
+LSTM_HIDDEN_DIM = 1000
+NUM_EPOCHS = 0
 NUM_EXAMPLES_TO_PRINT = 20
 TRAIN_FRAC = 0.8
+
+#gpu_options = tf.GPUOptions()
+tf_config = tf.ConfigProto()
+tf_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
+
 
 print('Loading SQuAD dataset')
 paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
@@ -55,7 +60,7 @@ num_empty_answers = 0
 for i in range(np_answers.shape[0]):
     if np.isclose(np_answers[i], np.zeros([2])).all():
         num_empty_answers += 1
-print('Fraction of empty answer vectors (should be zero): %s' % (num_empty_answers / num_examples))
+print('Fraction of empty answer vectors (should be close to zero): %s' % (num_empty_answers / num_examples))
 
 print('Loading embeddings for each word in vocabulary')
 np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict)
@@ -162,7 +167,7 @@ baseline_model.create_tensorboard_visualization('cic')
 
 train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(tf_total_loss)
 init = tf.global_variables_initializer()
-sess = tf.InteractiveSession()
+sess = tf.InteractiveSession(config=tf_config)
 sess.run(init)
 
 print('Validating proper inputs')
@@ -201,7 +206,7 @@ for i in range(sample_size):
 print(np_embeddings)
 
 print('Training model...')
-batch_size = 50
+batch_size = 1
 num_batches = int(num_examples * TRAIN_FRAC / batch_size)
 num_train_examples = batch_size * num_batches
 num_examples_correct = 0
