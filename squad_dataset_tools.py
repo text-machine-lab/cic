@@ -272,7 +272,7 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
     return np_questions, np_answers, np_contexts, ids, np_as
 
 
-def compute_span_accuracy(np_first, np_second):
+def compute_multi_label_accuracy(np_first, np_second):
     """Assume that inputs are span predictions and labels, and compute similarity score.
 
     np_first, np_second - m x 2 matrices, where m is the number examples, each example
@@ -505,13 +505,13 @@ class LSTM_Baseline_Test(unittest2.TestCase):
     def test_compute_span_accuracy(self):
         np_labels = np.array([[0, 1], [2, 3], [4, 5], [6, 7]])
         np_predictions = np.array([[0, 0], [2, 2], [4, 5], [6, 7]])
-        accuracy = compute_span_accuracy(np_labels, np_predictions)
+        accuracy = compute_multi_label_accuracy(np_labels, np_predictions)
         assert accuracy == 0.5
-        labels_same_accuracy = compute_span_accuracy(np_labels, np_labels)
-        predictions_same_accuracy = compute_span_accuracy(np_predictions, np_predictions)
+        labels_same_accuracy = compute_multi_label_accuracy(np_labels, np_labels)
+        predictions_same_accuracy = compute_multi_label_accuracy(np_predictions, np_predictions)
         assert labels_same_accuracy == 1.0
         assert predictions_same_accuracy == 1.0
-        labels_zeros_accuracy = compute_span_accuracy(np.zeros([4, 2]), np_labels)
+        labels_zeros_accuracy = compute_multi_label_accuracy(np.zeros([4, 2]), np_labels)
         assert labels_zeros_accuracy == 0.0
 
 
