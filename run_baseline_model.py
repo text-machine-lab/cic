@@ -6,16 +6,25 @@ import config
 import baseline_model
 import numpy as np
 import attention
+import os
 
-#Hyperparameters
+# Hyper-parameters
 LEARNING_RATE = .0004
-NUM_PARAGRAPHS = 60 # 18000
+NUM_PARAGRAPHS = None
 LSTM_HIDDEN_DIM = 800
-NUM_EPOCHS = 100
+NUM_EPOCHS = 1
 NUM_EXAMPLES_TO_PRINT = 20
 TRAIN_FRAC = 0.8
-PREDICT_PROBABILITIES = False
+PREDICT_PROBABILITIES = True
 VALIDATE_PROPER_INPUTS = False
+RESTORE_FROM_SAVE = False
+PRINT_TRAINING_EXAMPLES = True
+PRINT_VALIDATION_EXAMPLES = True
+PRINT_ACCURACY_EVERY_N_BATCHES = 100
+BATCH_SIZE = 20
+
+if not os.path.exists(config.BASELINE_MODEL_SAVE_DIR):
+    os.makedirs(config.BASELINE_MODEL_SAVE_DIR)
 
 tf_config = tf.ConfigProto()
 tf_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
@@ -155,7 +164,7 @@ else:
     # Predict real values for indices
     tf_start_index = tf_start_end_indices[:, 0]
     tf_end_index = tf_start_end_indices[:, 1]
-    tf_total_loss = tf.nn.l2_loss(tf.cast(tf_answer_indices, tf.float32) - tf_start_end_indices, name='loss') # squared error
+    tf_total_loss = tf.nn.l2_loss(tf.cast(tf_answer_indices, tf.float32) - tf_start_end_indices, name='loss')  # squared error
     tf_total_loss = tf_total_loss / tf.cast(tf_batch_size, tf.float32)
     tf_prediction = tf.cast(tf.round(tf_start_end_indices), tf.int32)
 
@@ -189,6 +198,9 @@ baseline_model.create_tensorboard_visualization('cic')
 train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(tf_total_loss)
 init = tf.global_variables_initializer()
 sess = tf.InteractiveSession(config=tf_config)
+assert tf_embeddings not in tf.trainable_variables()
+with tf.name_scope("SAVER"):
+    saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
 sess.run(init)
 
 if VALIDATE_PROPER_INPUTS:
@@ -227,66 +239,73 @@ if VALIDATE_PROPER_INPUTS:
                     assert np.isclose(np_sample_question_embs[i, j, :], stored_vector).all()
     print('Inputs validated')
 
-print('Training model...')
-batch_size = 20
-num_batches = int(num_examples * TRAIN_FRAC / batch_size)
-num_train_examples = batch_size * num_batches
+num_batches = int(num_examples * TRAIN_FRAC / BATCH_SIZE)
+num_train_examples = BATCH_SIZE * num_batches
+val_index_start = BATCH_SIZE * num_batches
 
-for epoch in range(NUM_EPOCHS):
-    print('Epoch: %s' % epoch)
-    losses = []
-    accuracies = []
-    for i in range(num_batches):
-        np_question_batch = np_questions[i*batch_size:i*batch_size+batch_size, :]
-        np_answer_batch = np_answers[i*batch_size:i*batch_size+batch_size, :]
-        np_context_batch = np_contexts[i*batch_size:i*batch_size+batch_size, :]
-        np_batch_predictions, np_loss, _ = sess.run([tf_prediction, tf_total_loss, train_op],
-                                                    feed_dict={tf_question_indices: np_question_batch,
-                                                               tf_answer_indices: np_answer_batch,
-                                                               tf_context_indices: np_context_batch,
-                                                               tf_batch_size: batch_size})
-        accuracy = sdt.compute_multi_label_accuracy(np_answer_batch, np_batch_predictions)
-        accuracies.append(accuracy)
-        losses.append(np_loss)
-    epoch_loss = np.mean(losses)
-    epoch_accuracy = np.mean(accuracies)
-    print('Epoch loss: %s' % epoch_loss)
-    print('TRAIN EM Score: %s' % epoch_accuracy)
+if RESTORE_FROM_SAVE:
+    print('Restoring from save...')
+    baseline_model.restore_model_from_save(config.BASELINE_MODEL_SAVE_DIR, var_list=tf.trainable_variables(), sess=sess)
+else:
+    print('Training model...')
+    all_train_predictions = []
+    for epoch in range(NUM_EPOCHS):
+        print('Epoch: %s' % epoch)
+        losses = []
+        accuracies = []
+        for i in range(num_batches):
+            np_question_batch = np_questions[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE, :]
+            np_answer_batch = np_answers[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE, :]
+            np_context_batch = np_contexts[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE, :]
+            np_batch_predictions, np_loss, _ = sess.run([tf_prediction, tf_total_loss, train_op],
+                                                        feed_dict={tf_question_indices: np_question_batch,
+                                                                   tf_answer_indices: np_answer_batch,
+                                                                   tf_context_indices: np_context_batch,
+                                                                   tf_batch_size: BATCH_SIZE})
+            accuracy = sdt.compute_multi_label_accuracy(np_answer_batch, np_batch_predictions)
+            accuracies.append(accuracy)
+            if PRINT_ACCURACY_EVERY_N_BATCHES is not None and i % PRINT_ACCURACY_EVERY_N_BATCHES == 0:
+                print('Batch TRAIN EM Score: %s' % np.mean(accuracies))
+            losses.append(np_loss)
+            if epoch == NUM_EPOCHS - 1:  # last epoch
+                all_train_predictions.append(np_batch_predictions)
+        epoch_loss = np.mean(losses)
+        epoch_accuracy = np.mean(accuracies)
+        print('Epoch loss: %s' % epoch_loss)
+        print('Final TRAIN EM Score: %s' % epoch_accuracy)
+        saver.save(sess, config.BASELINE_MODEL_SAVE_DIR,
+                   global_step=epoch)  # Save model after every epoch
 
-print('Predicting...')
-val_index_start = batch_size * num_batches
-np_train_predictions = sess.run(tf_prediction, feed_dict={tf_question_indices: np_questions[:val_index_start, :],
-                                                    tf_answer_indices: np_answers[:val_index_start, :],
-                                                    tf_context_indices: np_contexts[:val_index_start, :],
-                                                    tf_batch_size: num_train_examples})
+    np_train_predictions = np.concatenate(all_train_predictions, axis=0)
+    total_train_accuracy = sdt.compute_multi_label_accuracy(np_train_predictions, np_answers[:val_index_start, :])
+    print('TRAIN EM Score: %s' % total_train_accuracy)
 
-total_train_accuracy = sdt.compute_multi_label_accuracy(np_train_predictions, np_answers[:val_index_start, :])
+    if PRINT_TRAINING_EXAMPLES:
+        # Print training examples
+        predictions = sdt.convert_numpy_array_answers_to_strings(np_train_predictions[:NUM_EXAMPLES_TO_PRINT, :],
+                                                                 contexts[:NUM_EXAMPLES_TO_PRINT],
+                                                                 answer_is_span=True)
+        for i, each_prediction in enumerate(predictions):
+            print('Prediction: %s' % each_prediction)
+            print('Answer: %s' % examples[i][1])
+            print('Answer array: %s' % np_answers[i, :])
+            print('Prediction array: %s' % np_train_predictions[i, :])
+            print('Question: %s' % examples[i][0])
+            print('Len context: %s' % len(contexts[i]))
+            print()
 
-print('TRAIN EM Score: %s' % total_train_accuracy)
-
-# Print training examples
-predictions = sdt.convert_numpy_array_answers_to_strings(np_train_predictions[:NUM_EXAMPLES_TO_PRINT, :],
-                                                         contexts[:NUM_EXAMPLES_TO_PRINT],
-                                                         answer_is_span=True)
-for i, each_prediction in enumerate(predictions):
-    print('Prediction: %s' % each_prediction)
-    print('Answer: %s' % examples[i][1])
-    print('Answer array: %s' % np_answers[i, :])
-    print('Prediction array: %s' % np_train_predictions[i, :])
-    print('Question: %s' % examples[i][0])
-    print('Len context: %s' % len(contexts[i]))
-    print()
 print('\n######################################\n')
+print('Predicting...')
 # Must generate validation predictions in batches to avoid OOM error
 num_val_examples = num_examples - val_index_start
-num_val_batches = int(num_val_examples / batch_size) + 1  # +1 to include remainder examples
+num_val_batches = int(num_val_examples / BATCH_SIZE) + 1  # +1 to include remainder examples
 all_val_predictions = []
 for batch_index in range(num_val_batches):
-    current_start_index = batch_size * batch_index
-    if current_start_index + batch_size >= num_val_examples:
+    current_start_index = BATCH_SIZE * batch_index
+    if current_start_index + BATCH_SIZE >= num_val_examples:
         effective_batch_size = num_val_examples - current_start_index
     else:
-        effective_batch_size = batch_size
+        effective_batch_size = BATCH_SIZE
     current_end_index = current_start_index + effective_batch_size
     np_batch_val_predictions = sess.run(tf_prediction, feed_dict={tf_question_indices: np_questions[current_start_index:current_end_index, :],
                                                             tf_answer_indices: np_answers[current_start_index:current_end_index, :],
@@ -294,20 +313,20 @@ for batch_index in range(num_val_batches):
                                                             tf_batch_size: effective_batch_size})
     all_val_predictions.append(np_batch_val_predictions)
 np_val_predictions = np.concatenate(all_val_predictions, axis=0)
-
-# Print validation examples
-predictions = sdt.convert_numpy_array_answers_to_strings(np_val_predictions[:NUM_EXAMPLES_TO_PRINT, :],
-                                                         contexts[val_index_start:val_index_start+NUM_EXAMPLES_TO_PRINT],
-                                                         answer_is_span=True)
-for i, each_prediction in enumerate(predictions):
-    print('Prediction: %s' % each_prediction)
-    print('Answer: %s' % examples[val_index_start + i][1])
-    print('Answer array: %s' % np_answers[val_index_start + i, :])
-    print('Prediction array: %s' % np_val_predictions[i, :])
-    print('Question: %s' % examples[val_index_start + i][0])
-    print('Len context: %s' % len(contexts[val_index_start + i]))
-    print('Context: %s' % contexts[val_index_start + i])
-    print()
+if PRINT_VALIDATION_EXAMPLES:
+    # Print validation examples
+    predictions = sdt.convert_numpy_array_answers_to_strings(np_val_predictions[:NUM_EXAMPLES_TO_PRINT, :],
+                                                             contexts[val_index_start:val_index_start+NUM_EXAMPLES_TO_PRINT],
+                                                             answer_is_span=True)
+    for i, each_prediction in enumerate(predictions):
+        print('Prediction: %s' % each_prediction)
+        print('Answer: %s' % examples[val_index_start + i][1])
+        print('Answer array: %s' % np_answers[val_index_start + i, :])
+        print('Prediction array: %s' % np_val_predictions[i, :])
+        print('Question: %s' % examples[val_index_start + i][0])
+        print('Len context: %s' % len(contexts[val_index_start + i]))
+        print('Context: %s' % contexts[val_index_start + i])
+        print()
 
 val_accuracy = sdt.compute_multi_label_accuracy(np_val_predictions, np_answers[val_index_start:])
 

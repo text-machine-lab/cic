@@ -13,6 +13,9 @@ nlp = spacy.load('en_vectors_glove_md')  # python -m spacy download en
 #nlp = spacy.load('en')
 
 
+apple = nlp('apple').vector
+
+
 def load_squad_dataset_from_file(squad_filename):
     all_paragraphs = []
     all_qas = []

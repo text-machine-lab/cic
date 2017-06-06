@@ -21,6 +21,23 @@ def create_tensorboard_visualization(model_name):
     writer.add_graph(tf.get_default_graph())
 
 
+def restore_model_from_save(model_var_dir, var_list=None, sess=None, gpu_options=None):
+    """Restores all model variables from the specified directory."""
+    if sess is None:
+        sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
+
+    saver = tf.train.Saver(max_to_keep=10, var_list=var_list)
+    # Restore model from previous save.
+    ckpt = tf.train.get_checkpoint_state(model_var_dir)
+    if ckpt and ckpt.model_checkpoint_path:
+        saver.restore(sess, ckpt.model_checkpoint_path)
+    else:
+        print("No checkpoint found!")
+        return -1
+
+    return sess
+
+
 def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=None,
               reuse=False, time_step_inputs=None, reverse=False):
     """Runs an LSTM over input data and returns LSTM output and hidden state. Arguments:
