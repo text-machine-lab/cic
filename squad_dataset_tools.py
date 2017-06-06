@@ -272,6 +272,24 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
     return np_questions, np_answers, np_contexts, ids, np_as
 
 
+def compute_span_accuracy(np_first, np_second):
+    """Assume that inputs are span predictions and labels, and compute similarity score.
+
+    np_first, np_second - m x 2 matrices, where m is the number examples, each example
+    associated with two indices indicating the start and end of the span
+
+    Returns: a float accuracy between 0 and 1, 1 indicating the matrices are the same."""
+    assert np_first.shape == np_second.shape
+    m = np_first.shape[0]
+    num_correct = 0
+    for index in range(m):
+        if np.array_equal(np_first[index, :], np_second[index, :]):
+            num_correct += 1
+    accuracy = num_correct / m
+
+    return accuracy
+
+
 class LSTM_Baseline_Test(unittest2.TestCase):
     def setUp(self):
         self.answer = {'text': 'once upon', 'answer_start': 69}
@@ -483,6 +501,18 @@ class LSTM_Baseline_Test(unittest2.TestCase):
             assert questions[i] == each_example[0].lower()
             assert answers[i] == each_example[1].lower()
             assert contexts[i] == each_example[2].lower()
+
+    def test_compute_span_accuracy(self):
+        np_labels = np.array([[0, 1], [2, 3], [4, 5], [6, 7]])
+        np_predictions = np.array([[0, 0], [2, 2], [4, 5], [6, 7]])
+        accuracy = compute_span_accuracy(np_labels, np_predictions)
+        assert accuracy == 0.5
+        labels_same_accuracy = compute_span_accuracy(np_labels, np_labels)
+        predictions_same_accuracy = compute_span_accuracy(np_predictions, np_predictions)
+        assert labels_same_accuracy == 1.0
+        assert predictions_same_accuracy == 1.0
+        labels_zeros_accuracy = compute_span_accuracy(np.zeros([4, 2]), np_labels)
+        assert labels_zeros_accuracy == 0.0
 
 
 

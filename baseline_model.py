@@ -22,7 +22,7 @@ def create_tensorboard_visualization(model_name):
 
 
 def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=None,
-              reuse=False, time_step_inputs=None):
+              reuse=False, time_step_inputs=None, reverse=False):
     """Runs an LSTM over input data and returns LSTM output and hidden state. Arguments:
     lstm_hidden_dim - Size of hidden state of LSTM
     tf_batch_size - Tensor value representing size of current batch. Required for LSTM package
@@ -30,7 +30,10 @@ def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=N
     input_time_step_size - Size of input from tf_input that will go into LSTM in a single timestep
     num_time_steps - Number of time steps to run LSTM
     lstm_scope - Can be a string or a scope object. Used to disambiguate variable scopes of different LSTM objects
-    time_step_inputs - Inputs that are per time step. The same tensor is inserted into the model at each time step"""
+    time_step_inputs - Inputs that are per time step. The same tensor is inserted into the model at each time step
+    reverse - flag indicating whether the inputs should be fed in reverse order. useful for bidirectional GRU
+
+    Returns: list of num_time_step GRU outputs and list of num_time_step GRU hidden states."""
     if time_step_inputs is None:
         time_step_inputs = []
     time_step_outputs = []
@@ -41,7 +44,10 @@ def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=N
         # Grab time step input for each input tensor
         current_time_step_inputs = []
         for tf_input in inputs:
-            current_time_step_inputs.append(tf_input[:, i, :])
+            if not reverse:
+                current_time_step_inputs.append(tf_input[:, i, :])
+            else:
+                current_time_step_inputs.append(tf_input[:, num_time_steps - i - 1, :])
         #tf.slice(tf_input, [0, i, 0], [-1, i, input_time_step_size]))
 
         tf_input_time_step = tf.concat(current_time_step_inputs + time_step_inputs, 1)
