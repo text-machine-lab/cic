@@ -56,6 +56,7 @@ def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=N
     time_step_outputs = []
     time_step_hidden_states = []
     gru = tf.contrib.rnn.GRUCell(num_units=gru_hidden_dim)
+    #gru = tf.contrib.rnn.AttentionCellWrapper(gru, gru_hidden_dim)
     tf_hidden_state = gru.zero_state(tf_batch_size, tf.float32)
     for i in range(num_time_steps):
         # Grab time step input for each input tensor
@@ -74,6 +75,9 @@ def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=N
                 scope.reuse_variables()
             tf_lstm_output, tf_hidden_state = gru(tf_input_time_step, tf_hidden_state)
             # Return outputs at all timesteps to caller
+            if i == 0:
+                print('tf_lstm_output shape: %s' % str(tf_lstm_output.get_shape()))
+                print('tf_hidden_state shape: %s' % str(tf_hidden_state.get_shape()))
             time_step_outputs.append(tf_lstm_output)
             time_step_hidden_states.append(tf_hidden_state)
 
