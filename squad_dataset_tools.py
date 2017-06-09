@@ -293,6 +293,28 @@ def compute_multi_label_accuracy(np_first, np_second):
     return accuracy
 
 
+def compute_answer_mask(np_answers):
+    """Returns a numpy 2D array filled with ones up to
+    and including the first zero in each row of np_answers. This zero
+    is interpretted as the stop token and all remaining
+    tokens are not included in the mask. These tokens are set to
+    zero in the output array. If all tokens are zeros in input row,
+    returns all ones in that row.
+
+    Returns: mask across relevant tokens in input array."""
+    m = np_answers.shape[0]
+    n = np_answers.shape[1]
+    np_non_zeros = np.not_equal(np_answers, np.zeros([m, n]))
+    print(np_non_zeros)
+    np_mask = np.ones([m, n])
+    for i in range(m):
+        for j in range(n-1):
+            if not np_non_zeros[i, j]:
+                np_mask[i, (j+1):] = 0
+                break
+    return np_mask
+
+
 class LSTM_Baseline_Test(unittest2.TestCase):
     def setUp(self):
         self.answer = {'text': 'once upon', 'answer_start': 69}
@@ -301,6 +323,12 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         self.qas1 = {'question': 'can birds fly?', 'id': 54321, 'answers': [self.answer, self.answer2]}
         self.qas2 = {'question': 'what is the meaning of life?', 'id': 5454, 'answers': [self.answer3]}
         self.paragraph = {'context': 'once upon a time there was a useless paragraph. The end.', 'qas': [self.qas1, self.qas2]}
+
+    def test_compute_answer_mask(self):
+        np_answers = np.array([[1, 2, 0, 0], [5, 0, 0, 0], [6, 7, 8, 0], [0, 0, 0, 0], [1, 2, 3, 4]])
+        np_mask = compute_answer_mask(np_answers)
+        print(np_mask)
+        assert np.array_equal(np_mask, np.array([[1, 1, 1, 0], [1, 1, 0, 0], [1, 1, 1, 1], [1, 0, 0, 0], [1, 1, 1, 1]]))
 
     def test_load_squad_dataset_from_file(self):
         all_paragraphs = load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
@@ -448,8 +476,8 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         vocab_dict = {'': 0, 'apples': 2, 'oranges': 1}
         np_embeddings = construct_embeddings_for_vocab(vocab_dict)
         assert np_embeddings.shape == (3, 300)
-        print(np_embeddings[0, :])
-        print(np_embeddings[0, :].shape)
+        #print(np_embeddings[0, :])
+        #print(np_embeddings[0, :].shape)
         assert np.array_equal(np_embeddings[0, :], np.zeros((300,)))
         assert np.array_equal(np_embeddings[1, :], nlp('oranges').vector)
         assert np.array_equal(np_embeddings[2, :], nlp('apples').vector)
@@ -457,11 +485,11 @@ class LSTM_Baseline_Test(unittest2.TestCase):
     def test_convert_numpy_array_to_strings(self):
         examples = convert_paragraphs_to_flat_format([self.paragraph])
         vocab_dict = generate_vocabulary_for_paragraphs([self.paragraph]).token2id
-        print(vocab_dict)
+        #print(vocab_dict)
         np_questions, np_answers, np_contexts, ids, np_as = \
             generate_numpy_features_from_squad_examples(examples, vocab_dict)
         vocabulary = invert_dictionary(vocab_dict)
-        print(vocabulary)
+        #print(vocabulary)
         questions = convert_numpy_array_to_strings(np_questions, vocabulary)
         answers = convert_numpy_array_to_strings(np_answers, vocabulary)
         contexts = convert_numpy_array_to_strings(np_contexts, vocabulary)
@@ -474,11 +502,11 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         examples = convert_paragraphs_to_flat_format([self.paragraph])
         contexts = [example[2] for example in examples]
         vocab_dict = generate_vocabulary_for_paragraphs([self.paragraph]).token2id
-        print(vocab_dict)
+        #print(vocab_dict)
         np_questions, np_answers, np_contexts, ids, np_as = \
             generate_numpy_features_from_squad_examples(examples, vocab_dict, answer_indices_from_context=True)
         vocabulary = invert_dictionary(vocab_dict)
-        print(vocabulary)
+        #print(vocabulary)
         questions = convert_numpy_array_to_strings(np_questions, vocabulary)
         answers = convert_numpy_array_answers_to_strings(np_answers, contexts)
         contexts = convert_numpy_array_to_strings(np_contexts, vocabulary)
@@ -491,12 +519,12 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         examples = convert_paragraphs_to_flat_format([self.paragraph])
         contexts = [example[2] for example in examples]
         vocab_dict = generate_vocabulary_for_paragraphs([self.paragraph]).token2id
-        print(vocab_dict)
+        #print(vocab_dict)
         np_questions, np_answers, np_contexts, ids, np_as = \
             generate_numpy_features_from_squad_examples(examples, vocab_dict, answer_indices_from_context=True,
                                                         answer_is_span=True)
         vocabulary = invert_dictionary(vocab_dict)
-        print(vocabulary)
+        #print(vocabulary)
         questions = convert_numpy_array_to_strings(np_questions, vocabulary)
         answers = convert_numpy_array_answers_to_strings(np_answers, contexts, answer_is_span=True)
         contexts = convert_numpy_array_to_strings(np_contexts, vocabulary)
