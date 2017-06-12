@@ -89,12 +89,12 @@ def match_gru(tf_question_outputs, tf_passage_outputs, batch_size, hidden_size):
     match_gru = tf.contrib.rnn.GRUCell(num_units=hidden_size)
     tf_hidden_state = match_gru.zero_state(batch_size, tf.float32)
 
-    W_q = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='answer_W_q')
-    W_p = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='answer_W_p')
-    W_r = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='answer_W_r')
-    b_p = tf.Variable(tf.random_uniform([hidden_size], -0.08, 0.08), name='answer_b_p')
-    w = tf.Variable(tf.random_uniform([hidden_size, 1], -0.08, 0.08), name='answer_w')
-    b = tf.Variable(tf.random_uniform((1, 1), -0.08, 0.08), name='answer_b')
+    W_q = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='match_W_q')
+    W_p = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='match_W_p')
+    W_r = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='match_W_r')
+    b_p = tf.Variable(tf.random_uniform([hidden_size], -0.08, 0.08), name='match_b_p')
+    w = tf.Variable(tf.random_uniform([hidden_size, 1], -0.08, 0.08), name='match_w')
+    b = tf.Variable(tf.random_uniform((1, 1), -0.08, 0.08), name='match_b')
     Hr_states = []
     for i in range(config.MAX_CONTEXT_WORDS):  # Could have a problem here...
         with tf.name_scope('MATCH_TIMESTEP'):
