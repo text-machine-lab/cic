@@ -89,36 +89,29 @@ def match_gru(tf_question_outputs, tf_passage_outputs, batch_size, hidden_size):
     match_gru = tf.contrib.rnn.GRUCell(num_units=hidden_size)
     tf_hidden_state = match_gru.zero_state(batch_size, tf.float32)
 
-    W_q = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08))
-    W_p = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08))
-    W_r = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08))
-    b_p = tf.Variable(tf.random_uniform([hidden_size], -0.08, 0.08))
-    w = tf.Variable(tf.random_uniform([hidden_size, 1], -0.08, 0.08))
-    b = tf.Variable(tf.random_uniform((1, 1), -0.08, 0.08))
+    W_q = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='answer_W_q')
+    W_p = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='answer_W_p')
+    W_r = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='answer_W_r')
+    b_p = tf.Variable(tf.random_uniform([hidden_size], -0.08, 0.08), name='answer_b_p')
+    w = tf.Variable(tf.random_uniform([hidden_size, 1], -0.08, 0.08), name='answer_w')
+    b = tf.Variable(tf.random_uniform((1, 1), -0.08, 0.08), name='answer_b')
     Hr_states = []
-    for i in range(config.MAX_CONTEXT_WORDS):
-        # Hr_tilda_V_matmul = tf.reshape(tf.matmul(tf.reshape(Hr_tilda, [-1, RNN_HIDDEN_DIM * 2]), V),
-        #                                [-1, Hr_tilda.shape[1].value, RNN_HIDDEN_DIM])
-        # F_k = tf.tanh(Hr_tilda_V_matmul + tf.reshape(tf.matmul(tf_hidden_state, W_a) + b_a,
-        #                                              [-1, 1, RNN_HIDDEN_DIM]))  # Should broadcast
-        # F_k_v_matmul = tf.reshape(tf.matmul(tf.reshape(F_k, [-1, RNN_HIDDEN_DIM]), v), [-1, Hr_tilda.shape[1].value, 1])
-        # B_k = F_k_v_matmul + c
-        # B_k_predictions.append(tf.reshape(B_k, [-1, 1, Hr_tilda.shape[1].value]))
-        # tf_answer_input = tf.reshape(tf.matmul(F_k, tf.nn.softmax(B_k), transpose_a=True), [-1, RNN_HIDDEN_DIM])
-        current_context_input = tf_passage_outputs[:, i, :]
-        q_o_W_q = tf.reshape(tf.matmul(tf.reshape(tf_question_outputs, [-1, hidden_size]), W_q), [-1, config.MAX_QUESTION_WORDS, hidden_size])
-        G_i = tf.tanh(q_o_W_q + tf.reshape((tf.matmul(current_context_input, W_p) + tf.matmul(tf_hidden_state, W_r) + b_p), [-1, 1, hidden_size]))
-        a_i = tf.reshape(tf.matmul(tf.reshape(G_i, [-1, hidden_size]), w) + b, [-1, config.MAX_QUESTION_WORDS, 1])
-        H_q_a_i = tf.reshape(tf.matmul(tf_question_outputs, tf.nn.softmax(a_i), transpose_a=True), [-1, hidden_size])
-        tf_match_input = tf.concat([current_context_input, H_q_a_i], axis=1)
-        with tf.variable_scope('MATCH_ENCODER') as scope:
-            if i > 0:
-                scope.reuse_variables()
-            tf_lstm_output, tf_hidden_state = match_gru(tf_match_input, tf_hidden_state)
-            Hr_states.append(tf_hidden_state)
-            # match_outputs, match_output_states = tf.nn.bidirectional_dynamic_rnn(match_gru, match_gru_reverse, tf_context_inputs,
-            #                                                                      sequence_length=tf_context_lengths,
-            #
+    for i in range(config.MAX_CONTEXT_WORDS):  # Could have a problem here...
+        with tf.name_scope('MATCH_TIMESTEP'):
+            current_context_input = tf_passage_outputs[:, i, :]
+            q_o_W_q = tf.reshape(tf.matmul(tf.reshape(tf_question_outputs, [-1, hidden_size], name='question_reshape'), W_q, name='q_o_W_q_raw'),
+                                 [-1, config.MAX_QUESTION_WORDS, hidden_size], name='q_o_W_q')
+            G_i = tf.tanh(q_o_W_q + tf.reshape((tf.matmul(current_context_input, W_p, name='context_att_emb')
+                                                + tf.matmul(tf_hidden_state, W_r, name='hidden_att_emb') + b_p),
+                                               [-1, 1, hidden_size]), name='G_i')
+            a_i = tf.reshape(tf.matmul(tf.reshape(G_i, [-1, hidden_size]), w) + b, [-1, config.MAX_QUESTION_WORDS, 1], name='a_i')
+            H_q_a_i = tf.reshape(tf.matmul(tf_question_outputs, tf.nn.softmax(a_i), transpose_a=True), [-1, hidden_size], name='H_q_a_i')
+            tf_match_input = tf.concat([current_context_input, H_q_a_i], axis=1, name='match_input')
+            with tf.variable_scope('MATCH_ENCODER') as scope:
+                if i > 0:
+                    scope.reuse_variables()
+                tf_lstm_output, tf_hidden_state = match_gru(tf_match_input, tf_hidden_state)
+                Hr_states.append(tf_hidden_state)
     return tf.concat([tf.reshape(state, [-1, 1, hidden_size]) for state in Hr_states], axis=1)
 
 

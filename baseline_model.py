@@ -1,21 +1,21 @@
-"""Trains and predicts using the baseline LSTM model."""
-print('Starting program')
+"""Trains and predicts a model using a Match-LSTM and Answer Pointer. Design based on this paper:
+https://arxiv.org/pdf/1608.07905.pdf"""
 import tensorflow as tf
 import squad_dataset_tools as sdt
 import config
 import baseline_model_func
 import numpy as np
-import attention
 import os
 
-# CONTROL PANEL
+# CONTROL PANEL ########################################################################################################
+
 LEARNING_RATE = .0001
 NUM_PARAGRAPHS = 50
 RNN_HIDDEN_DIM = 800
 NUM_EXAMPLES_TO_PRINT = 20
 TRAIN_FRAC = 0.8
 PREDICT_PROBABILITIES = True
-VALIDATE_PROPER_INPUTS = False
+VALIDATE_PROPER_INPUTS = True
 RESTORE_FROM_SAVE = False
 TRAIN_MODEL_BEFORE_PREDICTION = True
 NUM_EPOCHS = 20
@@ -23,9 +23,15 @@ PRINT_TRAINING_EXAMPLES = True
 PRINT_VALIDATION_EXAMPLES = True
 PRINT_ACCURACY_EVERY_N_BATCHES = None
 BATCH_SIZE = 20
+TURN_OFF_TF_LOGGING = True
+
+# PRE-PROCESSING #######################################################################################################
 
 if not os.path.exists(config.BASELINE_MODEL_SAVE_DIR):
     os.makedirs(config.BASELINE_MODEL_SAVE_DIR)
+
+if TURN_OFF_TF_LOGGING:
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 tf_config = tf.ConfigProto()
 tf_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
@@ -86,145 +92,83 @@ for each_example in examples:
         num_answers_in_context += 1
 print('Fraction of answers found in passages: %s' % (num_answers_in_context / num_examples))
 
+# GRAPH CREATION #######################################################################################################
+
 print('Loading embeddings into Tensorflow')
 tf_embeddings = tf.Variable(np_embeddings, name='word_embeddings', dtype=tf.float32, trainable=False)
 print('Constructing placeholders')
-tf_question_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_QUESTION_WORDS), name='question_indices')
-tf_question_lengths = tf.placeholder(dtype=tf.int32, shape=(None), name='question_lengths')
-tf_context_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_CONTEXT_WORDS), name='context_indices')
-tf_context_lengths = tf.placeholder(dtype=tf.int32, shape=(None), name='context_lengths')
-tf_answer_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_ANSWER_WORDS), name='answer_indices')
-tf_answer_masks = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_ANSWER_WORDS), name='answer_masks')
-tf_batch_size = tf.placeholder(dtype=tf.int32, name='batch_size')
 
+with tf.name_scope('PLACEHOLDERS'):
+    tf_question_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_QUESTION_WORDS), name='question_indices')
+    tf_question_lengths = tf.placeholder(dtype=tf.int32, shape=(None), name='question_lengths')
+    tf_context_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_CONTEXT_WORDS), name='context_indices')
+    tf_context_lengths = tf.placeholder(dtype=tf.int32, shape=(None), name='context_lengths')
+    tf_answer_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_ANSWER_WORDS), name='answer_indices')
+    tf_answer_masks = tf.placeholder(dtype=tf.float32, shape=(None, config.MAX_ANSWER_WORDS), name='answer_masks')
+    tf_batch_size = tf.placeholder(dtype=tf.int32, name='batch_size')
 
-tf_question_embs = tf.nn.embedding_lookup(tf_embeddings, tf_question_indices, name='question_embeddings')
-tf_context_embs = tf.nn.embedding_lookup(tf_embeddings, tf_context_indices, name='context_embeddings')
+with tf.name_scope('INPUT_EMBEDDINGS'):
+    tf_question_embs = tf.nn.embedding_lookup(tf_embeddings, tf_question_indices, name='question_embeddings')
+    tf_context_embs = tf.nn.embedding_lookup(tf_embeddings, tf_context_indices, name='context_embeddings')
+
 print('Question embeddings shape: %s' % str(tf_question_embs.shape))
 print('Context embeddings shape: %s' % str(tf_context_embs.shape))
 
 # Model
 with tf.variable_scope('QUESTION_ENCODER'):
-    # _, question_hidden_states = baseline_model.build_gru(RNN_HIDDEN_DIM, tf_batch_size,
-    #                                                      [tf_question_embs], config.MAX_QUESTION_WORDS,
-    #                                                      gru_scope='QUESTION_RNN')
     question_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
     tf_question_outputs, tf_question_state = tf.nn.dynamic_rnn(question_gru, tf_question_embs,
                                                             sequence_length=tf_question_lengths, dtype=tf.float32)
-# with tf.name_scope('CONTEXT_ENCODER'):
-#     _, context_hidden_states = baseline_model.build_gru(RNN_HIDDEN_DIM, tf_batch_size,
-#                                                         [tf_context_embs], config.MAX_CONTEXT_WORDS,
-#                                                         gru_scope='CONTEXT_RNN')
-#
-# with tf.name_scope('CONTEXT_ENCODER_REVERSE'):
-#     _, reverse_context_hidden_states = baseline_model.build_gru(RNN_HIDDEN_DIM, tf_batch_size,
-#                                                                 [tf_context_embs], config.MAX_CONTEXT_WORDS,
-#                                                                 gru_scope='CONTEXT_RNN_REVERSE', reverse=True)
+
 with tf.variable_scope('CONTEXT_ENCODER'):
     context_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
     tf_context_outputs, tf_context_state = tf.nn.dynamic_rnn(context_gru, tf_context_embs,
                                                           sequence_length=tf_context_lengths, dtype=tf.float32)
 
-
 with tf.variable_scope('MATCH_GRU'):
     Hr = baseline_model_func.match_gru(tf_question_outputs, tf_context_outputs, tf_batch_size, RNN_HIDDEN_DIM)
 
+    Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM]), Hr], axis=1, name='Hr_tilda')
 
-# print('Below: tf_fw_bw_outputs, output_states[0] shapes -')
-# tf_fw_bw_outputs = tf.concat(match_outputs, axis=2)
-# print(tf_fw_bw_outputs.get_shape())
-# print(match_output_states[0].get_shape())
+with tf.name_scope('MATCH_VARIABLES'):
+    V = tf.Variable(tf.random_uniform([RNN_HIDDEN_DIM, RNN_HIDDEN_DIM], -0.08, 0.08), name='V')
+    W_a = tf.Variable(tf.random_uniform([RNN_HIDDEN_DIM, RNN_HIDDEN_DIM], -0.08, 0.08), name='W_a')
+    b_a = tf.Variable(tf.random_uniform([RNN_HIDDEN_DIM], -0.08, 0.08), name='b_a')
+    v = tf.Variable(tf.random_uniform([RNN_HIDDEN_DIM, 1], -0.08, 0.08), name='v')
+    c = tf.Variable(tf.random_uniform((1, 1), -0.08, 0.08), name='c')
 
-# print('tf_context_hidden_states shape: %s' % str(tf_context_hidden_states.get_shape()))
+with tf.variable_scope('ANSWER_DECODER') as scope:
+    answer_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
+    tf_hidden_state = answer_gru.zero_state(tf_batch_size, tf.float32)
+    B_k_predictions = []
 
-# tf_weighted_states = attention.attention(tf_fw_bw_outputs, RNN_HIDDEN_DIM)  # attention
-# print('Weighted states shape: %s' % str(tf_weighted_states.get_shape()))
+    for i in range(config.MAX_ANSWER_WORDS):
+        with tf.name_scope('ANSWER_TIMESTEP'):
+            Hr_tilda_V_matmul = tf.reshape(tf.matmul(tf.reshape(Hr_tilda, [-1, RNN_HIDDEN_DIM]), V),
+                                           [-1, Hr_tilda.shape[1].value, RNN_HIDDEN_DIM], name='Hr_tilda_V_matmul')
+            F_k = tf.tanh(Hr_tilda_V_matmul + tf.reshape(tf.matmul(tf_hidden_state, W_a) + b_a,
+                                                         [-1, 1, RNN_HIDDEN_DIM]), name='F_k')  # Should broadcast
+            F_k_v_matmul = tf.reshape(tf.matmul(tf.reshape(F_k, [-1, RNN_HIDDEN_DIM]), v), [-1, Hr_tilda.shape[1].value, 1],
+                                      name='F_k_v_matmul')
+            B_k = tf.add(F_k_v_matmul, c, name='B_k')
+            B_k_predictions.append(tf.reshape(B_k, [-1, 1, Hr_tilda.shape[1].value], name='B_k_reshape'))
+            tf_answer_input = tf.reshape(tf.matmul(F_k, tf.nn.softmax(B_k), transpose_a=True), [-1, RNN_HIDDEN_DIM],
+                                         name='answer_input')
 
-#Hr = tf.concat(match_outputs, axis=2)
-# Difference from paper - the empty token goes at the beginning, indicating the index 0 -> ''
-Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM]), Hr], axis=1)
+            if i > 0:
+                scope.reuse_variables()
+            tf_lstm_output, tf_hidden_state = answer_gru(tf_answer_input, tf_hidden_state)
 
-V = tf.Variable(tf.random_uniform([RNN_HIDDEN_DIM, RNN_HIDDEN_DIM], -0.08, 0.08))
-W_a = tf.Variable(tf.random_uniform([RNN_HIDDEN_DIM, RNN_HIDDEN_DIM], -0.08, 0.08))
-b_a = tf.Variable(tf.random_uniform([RNN_HIDDEN_DIM], -0.08, 0.08))
-v = tf.Variable(tf.random_uniform([RNN_HIDDEN_DIM, 1], -0.08, 0.08))
-c = tf.Variable(tf.random_uniform((1, 1), -0.08, 0.08))
+with tf.name_scope('OUTPUT'):
+    tf_probabilities = tf.concat(B_k_predictions, axis=1)
 
-answer_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
-tf_hidden_state = answer_gru.zero_state(tf_batch_size, tf.float32)
-tf_lstm_output = tf.zeros([tf_batch_size, RNN_HIDDEN_DIM], dtype=tf.float32)
-B_k_predictions = []
-for i in range(config.MAX_ANSWER_WORDS):
-    Hr_tilda_V_matmul = tf.reshape(tf.matmul(tf.reshape(Hr_tilda, [-1, RNN_HIDDEN_DIM]), V), [-1, Hr_tilda.shape[1].value, RNN_HIDDEN_DIM])
-    F_k = tf.tanh(Hr_tilda_V_matmul + tf.reshape(tf.matmul(tf_lstm_output, W_a) + b_a, [-1, 1, RNN_HIDDEN_DIM]))  # Should broadcast
-    F_k_v_matmul = tf.reshape(tf.matmul(tf.reshape(F_k, [-1, RNN_HIDDEN_DIM]), v), [-1, Hr_tilda.shape[1].value, 1])
-    B_k = F_k_v_matmul + c
-    B_k_predictions.append(tf.reshape(B_k, [-1, 1, Hr_tilda.shape[1].value]))
-    tf_answer_input = tf.reshape(tf.matmul(F_k, tf.nn.softmax(B_k), transpose_a=True), [-1, RNN_HIDDEN_DIM])
-    with tf.variable_scope('ANSWER_DECODER') as scope:
-        if i > 0:
-            scope.reuse_variables()
-        tf_lstm_output, tf_hidden_state = answer_gru(tf_answer_input, tf_hidden_state)
-tf_B_k_predictions = tf.concat(B_k_predictions, axis=1)
-# tf_question_context_emb = tf.concat([context_output_states[0], context_output_states[1]], axis=1, name='question_context_emb')
-# print('tf_question_context_emb shape: %s' % str(tf_question_context_emb.get_shape()))
-#
-# if PREDICT_PROBABILITIES:
-#     fc_output_size = index_prob_size * 2
-# else:
-#     fc_output_size = 2
-#
-# tf_layer1, tf_prediction1_w, tf_prediction1_b = baseline_model.create_dense_layer(tf_question_context_emb, tf_question_context_emb.shape[1].value,
-#                                                                                   RNN_HIDDEN_DIM * 2, activation='relu',
-#                                                                                   name='FIRST_PREDICTION_LAYER')
-#
-# tf_start_end_indices, tf_prediction2_w, tf_prediction2_b = baseline_model.create_dense_layer(tf_layer1, RNN_HIDDEN_DIM * 2,
-#                                                                                              fc_output_size, activation=None,
-#                                                                                              name='SECOND_PREDICTION_LAYER')
-
-# if PREDICT_PROBABILITIES:
-#     tf_start_prob = tf_start_end_indices[:, :index_prob_size]
-#     tf_end_prob = tf_start_end_indices[:, index_prob_size:]
-#     print('tf_start_prob, tf_answer_indices[:, 0]')
-#     print(tf_start_prob.get_shape())
-#     print(tf_answer_indices[:, 0].get_shape())
-#     tf_start_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_start_prob,
-#                                                                      labels=tf_answer_indices[:, 0])
-#     tf_end_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_end_prob,
-#                                                                    labels=tf_answer_indices[:, 1])
-#     tf_total_loss = tf.reduce_mean(tf_start_losses + tf_end_losses, axis=0)
-#     tf_start_index = tf.argmax(tf_start_prob, axis=1)
-#     tf_end_index = tf.argmax(tf_end_prob, axis=1)
-#     tf_prediction = tf.stack([tf_start_index, tf_end_index], axis=1)
-# else:
-#     # Predict real values for indices
-#     tf_start_index = tf_start_end_indices[:, 0]
-#     tf_end_index = tf_start_end_indices[:, 1]
-#     tf_total_loss = tf.nn.l2_loss(tf.cast(tf_answer_indices, tf.float32) - tf_start_end_indices, name='loss')  # squared error
-#     tf_total_loss = tf_total_loss / tf.cast(tf_batch_size, tf.float32)
-#     tf_prediction = tf.cast(tf.round(tf_start_end_indices), tf.int32)
-
-# vocab_predictions = []
-# for each_output in answer_outputs:
-#     word_prediction = tf.matmul(each_output, tf_vocab_w) + tf_vocab_b
-#     vocab_predictions.append(word_prediction)
-#
-tf_prediction = tf.argmax(tf_B_k_predictions, axis=2)
-#
-# print('Model output prediction indices shape: %s' % str(tf_predictions_indices.get_shape()))
-# print('RNN output shape: %s' % str(answer_outputs[0].get_shape()))
-# print('Labels indices for loss function: %s' % str(tf_answer_indices[:, 0].get_shape()))
-# print('Prediction distribution shape: %s' % str(vocab_predictions[0].get_shape()))
+    tf_predictions = tf.argmax(tf_probabilities, axis=2)
 
 # Calculate loss per each
-tf_total_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_B_k_predictions, labels=tf_answer_indices)
-tf_total_loss = tf.reduce_mean(tf.multiply(tf_total_losses, tf.cast(tf_answer_masks, tf.float32)))
-# for i, each_prediction in enumerate(B_k_predictions):
-#     tf_output_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=each_prediction, labels=tf_answer_indices[:, i])
-#     tf_total_loss += tf.reduce_mean(tf_output_loss, axis=0)
-#
-# tf_total_loss = tf.reduce_mean(tf_total_losses, axis=0)
-# print('Shape of tf_total_loss: %s' % str(tf_total_loss.get_shape()))
+with tf.name_scope('LOSS'):
+    tf_total_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_probabilities, labels=tf_answer_indices)
+    tf_total_loss = tf.reduce_mean(tf.multiply(tf_total_losses, tf.cast(tf_answer_masks, tf.float32)))
+
 # Visualize
 baseline_model_func.create_tensorboard_visualization('cic')
 
@@ -234,6 +178,9 @@ sess = tf.InteractiveSession(config=tf_config)
 assert tf_embeddings not in tf.trainable_variables()
 with tf.name_scope("SAVER"):
     saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
+
+# GRAPH EXECUTION ######################################################################################################
+
 sess.run(init)
 
 if VALIDATE_PROPER_INPUTS:
@@ -246,6 +193,9 @@ if VALIDATE_PROPER_INPUTS:
         sample_size = num_examples
     fd={tf_context_indices: np_contexts[:sample_size, :]}
     np_sample_context_embs = tf_context_embs.eval(fd)
+    num_filled_embs = np.count_nonzero(np_sample_context_embs)
+    frac_filled_embs = 1 - num_filled_embs / np_sample_context_embs.size
+    print('Fraction of words in context without embeddings: %s' % frac_filled_embs)
     for i in range(sample_size):
         context_tokens = contexts[i].split()
         for j in range(np_sample_context_embs.shape[1]):
@@ -272,13 +222,17 @@ if VALIDATE_PROPER_INPUTS:
                     assert np.isclose(np_sample_question_embs[i, j, :], stored_vector).all()
     print('Inputs validated')
 
+# TRAINING #############################################################################################################
+
 num_batches = int(num_examples * TRAIN_FRAC / BATCH_SIZE)
 num_train_examples = BATCH_SIZE * num_batches
 val_index_start = BATCH_SIZE * num_batches
 
 if RESTORE_FROM_SAVE:
     print('Restoring from save...')
-    baseline_model_func.restore_model_from_save(config.BASELINE_MODEL_SAVE_DIR, var_list=tf.trainable_variables(), sess=sess)
+    baseline_model_func.restore_model_from_save(config.BASELINE_MODEL_SAVE_DIR,
+                                                var_list=tf.trainable_variables(),
+                                                sess=sess)
 
 if TRAIN_MODEL_BEFORE_PREDICTION:
     print('Training model...')
@@ -295,7 +249,7 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
             np_context_batch = np_contexts[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE, :]
             np_context_length_batch = np_context_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
             np_question_length_batch = np_question_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
-            np_batch_predictions, np_loss, _ = sess.run([tf_prediction, tf_total_loss, train_op],
+            np_batch_predictions, np_loss, _ = sess.run([tf_predictions, tf_total_loss, train_op],
                                                         feed_dict={tf_question_indices: np_question_batch,
                                                                    tf_question_lengths: np_question_length_batch,
                                                                    tf_answer_indices: np_answer_batch,
@@ -304,7 +258,8 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
                                                                    tf_context_lengths: np_context_length_batch,
                                                                    tf_batch_size: BATCH_SIZE})
             accuracy = sdt.compute_multi_label_accuracy(np_answer_batch, np_batch_predictions)
-            frac_zero = sdt.compute_multi_label_accuracy(np_batch_predictions, np.zeros([BATCH_SIZE, config.MAX_ANSWER_WORDS]))
+            frac_zero = sdt.compute_multi_label_accuracy(np_batch_predictions,
+                                                         np.zeros([BATCH_SIZE, config.MAX_ANSWER_WORDS]))
             accuracies.append(accuracy)
             frac_zeros.append(frac_zero)
             if PRINT_ACCURACY_EVERY_N_BATCHES is not None and i % PRINT_ACCURACY_EVERY_N_BATCHES == 0:
@@ -340,6 +295,8 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
             print('Len context: %s' % len(contexts[i]))
             print()
 
+# PREDICTION ###########################################################################################################
+
 print('\n######################################\n')
 print('Predicting...')
 # Must generate validation predictions in batches to avoid OOM error
@@ -353,20 +310,23 @@ for batch_index in range(num_val_batches):
     else:
         effective_batch_size = BATCH_SIZE
     current_end_index = current_start_index + effective_batch_size
-    np_batch_val_predictions = sess.run(tf_prediction, feed_dict={tf_question_indices: np_questions[current_start_index:current_end_index, :],
-                                                            tf_question_lengths: np_question_lengths[current_start_index: current_end_index],
-                                                            tf_answer_indices: np_answers[current_start_index:current_end_index, :],
-                                                            tf_answer_masks: np_answer_masks[current_start_index:current_end_index, :],
-                                                            tf_context_indices: np_contexts[current_start_index:current_end_index, :],
-                                                            tf_context_lengths: np_context_lengths[current_start_index: current_end_index],
-                                                            tf_batch_size: effective_batch_size})
+    np_batch_val_predictions = \
+        sess.run(tf_predictions,
+                 feed_dict={tf_question_indices: np_questions[current_start_index:current_end_index, :],
+                            tf_question_lengths: np_question_lengths[current_start_index: current_end_index],
+                            tf_answer_indices: np_answers[current_start_index:current_end_index, :],
+                            tf_answer_masks: np_answer_masks[current_start_index:current_end_index, :],
+                            tf_context_indices: np_contexts[current_start_index:current_end_index, :],
+                            tf_context_lengths: np_context_lengths[current_start_index: current_end_index],
+                            tf_batch_size: effective_batch_size})
     all_val_predictions.append(np_batch_val_predictions)
 np_val_predictions = np.concatenate(all_val_predictions, axis=0)
 if PRINT_VALIDATION_EXAMPLES:
     # Print validation examples
-    predictions = sdt.convert_numpy_array_answers_to_strings(np_val_predictions[:NUM_EXAMPLES_TO_PRINT, :],
-                                                             contexts[val_index_start:val_index_start+NUM_EXAMPLES_TO_PRINT],
-                                                             answer_is_span=False)
+    predictions \
+        = sdt.convert_numpy_array_answers_to_strings(np_val_predictions[:NUM_EXAMPLES_TO_PRINT, :],
+                                                     contexts[val_index_start:val_index_start+NUM_EXAMPLES_TO_PRINT],
+                                                     answer_is_span=False)
     for i, each_prediction in enumerate(predictions):
         print('Prediction: %s' % each_prediction)
         print('Answer: %s' % examples[val_index_start + i][1])

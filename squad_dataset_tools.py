@@ -232,9 +232,6 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
         question_tokens = question.lower().split()
         answer_tokens = answer.lower().split()
         context_tokens = context.lower().split()
-        # assert len(question_tokens) <= max_question_words
-        # assert len(answer_tokens) <= max_answer_words
-        # assert len(context_tokens) <= max_context_words
         answer_end = answer_start + len(answer_tokens)
         for j, each_token in enumerate(question_tokens):
             if j < max_question_words and each_token in vocab_dict:
@@ -244,12 +241,6 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
                 np_contexts[i, j] = vocab_dict[each_token]
 
         if answer_indices_from_context:
-            # for j, each_token in enumerate(answer_tokens):
-            #     if j < max_answer_words and each_token in context_tokens:
-            #         answer_word_index = context_tokens.index(each_token) + 1  # index 0 -> ''
-            #
-            #         if answer_word_index < config.MAX_CONTEXT_WORDS:
-            #             np_answers[i, j] = answer_word_index
             for context_index, each_context_token in enumerate(context_tokens):
                 answer_starts_here = True
                 for answer_index, each_answer_token in enumerate(answer_tokens):
@@ -310,6 +301,7 @@ def compute_answer_mask(np_answers):
     for i in range(m):
         for j in range(n-1):
             if not np_non_zeros[i, j]:
+                np_mask[i, j] = 1 / config.MAX_CONTEXT_WORDS
                 np_mask[i, (j+1):] = 0
                 break
     return np_mask
