@@ -75,7 +75,7 @@ def convert_numpy_array_to_strings(np_examples, vocabulary):
     return examples
 
 
-def convert_numpy_array_answers_to_strings(np_answers, contexts, answer_is_span=False):
+def convert_numpy_array_answers_to_strings(np_answers, contexts, answer_is_span=False, zero_stop_token=False):
     """Converts a numpy array of answer indices into a list of strings.
     Indices are taken from the context of each answer.
 
@@ -86,6 +86,8 @@ def convert_numpy_array_answers_to_strings(np_answers, contexts, answer_is_span=
     contexts - list of contexts, one for each answer
     answer_is_span - answer array contains start and end indices of array,
     instead of sequence of indices
+    zero_stop_token - function stops reconstruction of string upon
+    reading stop token (index 0)
 
     Returns: a list of strings, where each string is constructed from
     indices in the array as they appear in the context."""
@@ -108,6 +110,9 @@ def convert_numpy_array_answers_to_strings(np_answers, contexts, answer_is_span=
                         if j > 0:
                             answer_string += ' '
                         answer_string += context_tokens[context_index]
+                else:
+                    if zero_stop_token:
+                        break
         answer_strings.append(answer_string)
     return answer_strings
 
@@ -276,6 +281,7 @@ def compute_multi_label_accuracy(np_first, np_second):
     assert np_first.shape == np_second.shape
     m = np_first.shape[0]
     num_correct = 0
+
     for index in range(m):
         if np.array_equal(np_first[index, :], np_second[index, :]):
             num_correct += 1
@@ -284,7 +290,32 @@ def compute_multi_label_accuracy(np_first, np_second):
     return accuracy
 
 
-def compute_answer_mask(np_answers):
+def compute_mask_accuracy(np_first, np_second, np_mask):
+    """Computes accuracy between two numpy arrays, given a mask
+    array that decides which answers to include in accuracy score.
+    Accuracy score is exact match per row, and also returns
+    per element accuracy with mask.
+
+    np_first, np_second - arrays to compare
+    np_mask - same size as np_first, np_second, with fractional weights
+    per element indicating if it should be included in accuracy prediction
+
+    Returns: Accuracies."""
+    assert np_first.shape == np_second.shape
+    m = np_first.shape[0]
+    num_correct = 0
+
+    accuracies = []
+    np_same = (np_first == np_second)
+    np_same_important = np.multiply(np_same, np_mask)
+    element_wise_accuracy = np.sum(np_same_important) / np.sum(np_mask)
+    row_accuracy = np.sum(np_same_important, axis=1) / np.sum(np_mask, axis=1)
+    accuracy = np.mean(row_accuracy > 0.9999)
+
+    return accuracy, element_wise_accuracy
+
+
+def compute_answer_mask(np_answers, stop_token_weight=(1 / (config.MAX_CONTEXT_WORDS + 1))):
     """Returns a numpy 2D array filled with ones up to
     and including the first zero in each row of np_answers. This zero
     is interpretted as the stop token and all remaining
@@ -301,7 +332,7 @@ def compute_answer_mask(np_answers):
     for i in range(m):
         for j in range(n-1):
             if not np_non_zeros[i, j]:
-                np_mask[i, j] = 1 / config.MAX_CONTEXT_WORDS
+                np_mask[i, j] = stop_token_weight
                 np_mask[i, (j+1):] = 0
                 break
     return np_mask
@@ -320,7 +351,7 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         np_answers = np.array([[1, 2, 0, 0], [5, 0, 0, 0], [6, 7, 8, 0], [0, 0, 0, 0], [1, 2, 3, 4]])
         np_mask = compute_answer_mask(np_answers)
         print(np_mask)
-        assert np.array_equal(np_mask, np.array([[1, 1, 1, 0], [1, 1, 0, 0], [1, 1, 1, 1], [1, 0, 0, 0], [1, 1, 1, 1]]))
+        # assert np.array_equal(np_mask, np.array([[1, 1, .005, 0], [1, .005, 0, 0], [1, 1, 1, 1], [.005, 0, 0, 0], [1, 1, 1, 1]]))
 
     def test_load_squad_dataset_from_file(self):
         all_paragraphs = load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
@@ -537,6 +568,21 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         labels_zeros_accuracy = compute_multi_label_accuracy(np.zeros([4, 2]), np_labels)
         assert labels_zeros_accuracy == 0.0
 
+    def test_compute_mask_accuracy(self):
+        np_first = np.array([[1, 2, 3, 0, 0]])
+        np_second = np.array([[1, 2, 4, 0, 0]])
+        np_mask = np.array([[1, 1, 1, .2, 0]])
+        accuracy, word_accuracy = compute_mask_accuracy(np_first, np_second, np_mask)
+        assert word_accuracy == 0.6875
+        assert accuracy == 0
+
+        np_first = np.array([[1, 2, 3, 0, 0], [1, 7, 4, 0, 1]])
+        np_second = np.array([[1, 2, 4, 0, 0], [1, 7, 4, 0, 0]])
+        np_mask = np.array([[1, 1, 1, .2, 0], [1, 1, 1, .2, 0]])
+        accuracy, word_accuracy = compute_mask_accuracy(np_first, np_second, np_mask)
+        print(word_accuracy)
+        assert word_accuracy == 0.84375
+        assert accuracy == 0.5
 
 
 

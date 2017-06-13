@@ -1,7 +1,8 @@
-"""Copyright 2017 David Donahue. Baseline LSTM model to make predictions on SQuAD dataset."""
+"""Copyright 2017 David Donahue. Functions and unit tests for baseline model script."""
 import unittest2
 import tensorflow as tf
 import config
+import numpy as np
 
 
 class LSTMBaselineModel:
@@ -37,6 +38,40 @@ def restore_model_from_save(model_var_dir, var_list=None, sess=None, gpu_options
         return -1
 
     return sess
+
+
+def predict_on_examples(model_io,
+                        np_questions, np_question_lengths,
+                        np_answers, np_answer_masks,
+                        np_contexts, np_context_lengths,
+                        batch_size):
+    # Must generate validation predictions in batches to avoid OOM error
+    assert np_questions.shape[0] == np_answers.shape[0]
+    assert np_answers.shape[0] == np_contexts.shape[0]
+    num_val_examples = np_questions.shape[0]
+    num_val_batches = int(num_val_examples / batch_size) + 1  # +1 to include remainder examples
+    all_val_predictions = []
+    for batch_index in range(num_val_batches):
+        current_start_index = batch_size * batch_index
+        if current_start_index + batch_size >= num_val_examples:
+            effective_batch_size = num_val_examples - current_start_index
+        else:
+            effective_batch_size = batch_size
+        if effective_batch_size == 0:
+            break
+        current_end_index = current_start_index + effective_batch_size
+        np_batch_val_predictions = \
+            tf.get_default_session().run(model_io['predictions'],
+                     feed_dict={model_io['questions']: np_questions[current_start_index:current_end_index, :],
+                                model_io['question_lengths']: np_question_lengths[current_start_index:current_end_index],
+                                model_io['answers']: np_answers[current_start_index:current_end_index, :],
+                                model_io['answer_masks']: np_answer_masks[current_start_index:current_end_index, :],
+                                model_io['contexts']: np_contexts[current_start_index:current_end_index, :],
+                                model_io['context_lengths']: np_context_lengths[current_start_index:current_end_index],
+                                model_io['batch_size']: effective_batch_size})
+        all_val_predictions.append(np_batch_val_predictions)
+    np_val_predictions = np.concatenate(all_val_predictions, axis=0)
+    return np_val_predictions
 
 
 def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=None,
@@ -89,22 +124,24 @@ def match_gru(tf_question_outputs, tf_passage_outputs, batch_size, hidden_size):
     match_gru = tf.contrib.rnn.GRUCell(num_units=hidden_size)
     tf_hidden_state = match_gru.zero_state(batch_size, tf.float32)
 
-    W_q = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='match_W_q')
-    W_p = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='match_W_p')
-    W_r = tf.Variable(tf.random_uniform([hidden_size, hidden_size], -0.08, 0.08), name='match_W_r')
-    b_p = tf.Variable(tf.random_uniform([hidden_size], -0.08, 0.08), name='match_b_p')
-    w = tf.Variable(tf.random_uniform([hidden_size, 1], -0.08, 0.08), name='match_w')
-    b = tf.Variable(tf.random_uniform((1, 1), -0.08, 0.08), name='match_b')
+    tf_question_weight = tf.get_variable('match_W_q', shape=[hidden_size, hidden_size], initializer=tf.contrib.layers.xavier_initializer())
+    tf_passage_weight = tf.get_variable('match_W_p', shape=[hidden_size, hidden_size], initializer=tf.contrib.layers.xavier_initializer())
+    tf_hidden_weight = tf.get_variable('match_W_r', shape=[hidden_size, hidden_size], initializer=tf.contrib.layers.xavier_initializer())
+    tf_passage_bias = tf.get_variable('match_b_p', shape=[hidden_size], initializer=tf.contrib.layers.xavier_initializer())
+    tf_attention_weight = tf.get_variable('match_w', shape=[hidden_size, 1], initializer=tf.contrib.layers.xavier_initializer())
+    tf_attention_bias = tf.get_variable('match_b', shape=[1, 1], initializer=tf.contrib.layers.xavier_initializer())
     Hr_states = []
     for i in range(config.MAX_CONTEXT_WORDS):  # Could have a problem here...
         with tf.name_scope('MATCH_TIMESTEP'):
             current_context_input = tf_passage_outputs[:, i, :]
-            q_o_W_q = tf.reshape(tf.matmul(tf.reshape(tf_question_outputs, [-1, hidden_size], name='question_reshape'), W_q, name='q_o_W_q_raw'),
-                                 [-1, config.MAX_QUESTION_WORDS, hidden_size], name='q_o_W_q')
-            G_i = tf.tanh(q_o_W_q + tf.reshape((tf.matmul(current_context_input, W_p, name='context_att_emb')
-                                                + tf.matmul(tf_hidden_state, W_r, name='hidden_att_emb') + b_p),
-                                               [-1, 1, hidden_size]), name='G_i')
-            a_i = tf.reshape(tf.matmul(tf.reshape(G_i, [-1, hidden_size]), w) + b, [-1, config.MAX_QUESTION_WORDS, 1], name='a_i')
+            tf_question_outputs_reshaped = tf.reshape(tf_question_outputs, [-1, hidden_size], name='question_reshape')
+            tf_q_o_w_q_not_reshaped = tf.matmul(tf_question_outputs_reshaped, tf_question_weight, name='q_o_W_q_not_reshaped')
+            tf_q_o_w_q = tf.reshape(tf_q_o_w_q_not_reshaped, [-1, config.MAX_QUESTION_WORDS, hidden_size], name='q_o_W_q')
+            tf_context_input_w_p = tf.matmul(current_context_input, tf_passage_weight, name='context_att_emb')
+            tf_hidden_state_w_r = tf.matmul(tf_hidden_state, tf_hidden_weight, name='hidden_att_emb')
+            tf_match_q_c_r_transform_reshaped = tf.reshape(tf_context_input_w_p + tf_hidden_state_w_r + tf_passage_bias, [-1, 1, hidden_size], name='qcr_transform_reshaped')
+            G_i = tf.tanh(tf_q_o_w_q + tf_match_q_c_r_transform_reshaped, name='G_i')
+            a_i = tf.reshape(tf.matmul(tf.reshape(G_i, [-1, hidden_size]), tf_attention_weight) + tf_attention_bias, [-1, config.MAX_QUESTION_WORDS, 1], name='a_i')
             H_q_a_i = tf.reshape(tf.matmul(tf_question_outputs, tf.nn.softmax(a_i), transpose_a=True), [-1, hidden_size], name='H_q_a_i')
             tf_match_input = tf.concat([current_context_input, H_q_a_i], axis=1, name='match_input')
             with tf.variable_scope('MATCH_ENCODER') as scope:
