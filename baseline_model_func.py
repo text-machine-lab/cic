@@ -121,6 +121,7 @@ def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=N
 
 
 def match_gru(tf_question_outputs, tf_passage_outputs, batch_size, hidden_size):
+    """Match-LSTM implementation based on https://arxiv.org/pdf/1608.07905.pdf"""
     match_gru = tf.contrib.rnn.GRUCell(num_units=hidden_size)
     tf_hidden_state = match_gru.zero_state(batch_size, tf.float32)
 
@@ -133,23 +134,60 @@ def match_gru(tf_question_outputs, tf_passage_outputs, batch_size, hidden_size):
     Hr_states = []
     for i in range(config.MAX_CONTEXT_WORDS):  # Could have a problem here...
         with tf.name_scope('MATCH_TIMESTEP'):
-            current_context_input = tf_passage_outputs[:, i, :]
-            tf_question_outputs_reshaped = tf.reshape(tf_question_outputs, [-1, hidden_size], name='question_reshape')
-            tf_q_o_w_q_not_reshaped = tf.matmul(tf_question_outputs_reshaped, tf_question_weight, name='q_o_W_q_not_reshaped')
-            tf_q_o_w_q = tf.reshape(tf_q_o_w_q_not_reshaped, [-1, config.MAX_QUESTION_WORDS, hidden_size], name='q_o_W_q')
-            tf_context_input_w_p = tf.matmul(current_context_input, tf_passage_weight, name='context_att_emb')
-            tf_hidden_state_w_r = tf.matmul(tf_hidden_state, tf_hidden_weight, name='hidden_att_emb')
-            tf_match_q_c_r_transform_reshaped = tf.reshape(tf_context_input_w_p + tf_hidden_state_w_r + tf_passage_bias, [-1, 1, hidden_size], name='qcr_transform_reshaped')
-            G_i = tf.tanh(tf_q_o_w_q + tf_match_q_c_r_transform_reshaped, name='G_i')
-            a_i = tf.reshape(tf.matmul(tf.reshape(G_i, [-1, hidden_size]), tf_attention_weight) + tf_attention_bias, [-1, config.MAX_QUESTION_WORDS, 1], name='a_i')
+            hiP = tf_passage_outputs[:, i, :]
+            Hq_reshape = tf.reshape(tf_question_outputs, [-1, hidden_size], name='question_reshape')
+            Wq_Hq_matmul = tf.matmul(Hq_reshape, tf_question_weight, name='q_o_W_q_not_reshaped')
+            Wq_Hq_matmul_reshape = tf.reshape(Wq_Hq_matmul, [batch_size, config.MAX_QUESTION_WORDS, hidden_size], name='q_o_W_q')
+            Wp_hiP_matmul = tf.matmul(hiP, tf_passage_weight, name='context_att_emb')
+            Wr_hr = tf.matmul(tf_hidden_state, tf_hidden_weight, name='hidden_att_emb')
+            WphiP_Wrhr_bp_add = tf.reshape(Wp_hiP_matmul + Wr_hr + tf_passage_bias, [batch_size, 1, hidden_size], name='qcr_transform_reshaped')
+            G_i = tf.tanh(Wq_Hq_matmul_reshape + WphiP_Wrhr_bp_add, name='G_i')
+            a_i = tf.reshape(tf.matmul(tf.reshape(G_i, [-1, hidden_size]), tf_attention_weight) + tf_attention_bias, [batch_size, config.MAX_QUESTION_WORDS, 1], name='a_i')
             H_q_a_i = tf.reshape(tf.matmul(tf_question_outputs, tf.nn.softmax(a_i), transpose_a=True), [-1, hidden_size], name='H_q_a_i')
-            tf_match_input = tf.concat([current_context_input, H_q_a_i], axis=1, name='match_input')
+            tf_match_input = tf.concat([hiP, H_q_a_i], axis=1, name='match_input')
             with tf.variable_scope('MATCH_ENCODER') as scope:
                 if i > 0:
                     scope.reuse_variables()
                 tf_lstm_output, tf_hidden_state = match_gru(tf_match_input, tf_hidden_state)
                 Hr_states.append(tf_hidden_state)
     return tf.concat([tf.reshape(state, [-1, 1, hidden_size]) for state in Hr_states], axis=1)
+
+
+def pointer_net(Hr_tilda, batch_size, hidden_size):
+    """Pointer Net implementation based on https://arxiv.org/pdf/1608.07905.pdf"""
+    with tf.name_scope('POINTER_VARIABLES'):
+        V = tf.get_variable('V', shape=[hidden_size, hidden_size],
+                            initializer=tf.contrib.layers.xavier_initializer())
+        W_a = tf.get_variable('W_a', shape=[hidden_size, hidden_size],
+                              initializer=tf.contrib.layers.xavier_initializer())
+        b_a = tf.get_variable('b_a', shape=[hidden_size], initializer=tf.contrib.layers.xavier_initializer())
+        v = tf.get_variable('w', shape=[hidden_size, 1], initializer=tf.contrib.layers.xavier_initializer())
+        c = tf.get_variable('c', shape=[1, 1], initializer=tf.contrib.layers.xavier_initializer())
+
+    with tf.variable_scope('POINTER_NET') as scope:
+        answer_gru = tf.contrib.rnn.GRUCell(num_units=hidden_size)
+        tf_hidden_state = answer_gru.zero_state(batch_size, tf.float32)
+        B_k_predictions = []
+
+        for i in range(config.MAX_ANSWER_WORDS):
+            with tf.name_scope('ANSWER_TIMESTEP'):
+                Hr_tilda_V_matmul = tf.reshape(tf.matmul(tf.reshape(Hr_tilda, [-1, hidden_size]), V),
+                                               [-1, Hr_tilda.shape[1].value, hidden_size], name='Hr_tilda_V_matmul')
+                F_k = tf.tanh(Hr_tilda_V_matmul + tf.reshape(tf.matmul(tf_hidden_state, W_a) + b_a,
+                                                             [-1, 1, hidden_size]), name='F_k')  # Should broadcast
+                F_k_v_matmul = tf.reshape(tf.matmul(tf.reshape(F_k, [-1, hidden_size]), v),
+                                          [-1, Hr_tilda.shape[1].value, 1],
+                                          name='F_k_v_matmul')
+                B_k = tf.add(F_k_v_matmul, c, name='B_k')
+                B_k_predictions.append(tf.reshape(B_k, [-1, 1, Hr_tilda.shape[1].value], name='B_k_reshape'))
+                tf_answer_input = tf.reshape(tf.matmul(Hr_tilda, tf.nn.softmax(B_k), transpose_a=True),
+                                             [-1, hidden_size],
+                                             name='answer_input')
+                if i > 0:
+                    scope.reuse_variables()
+                tf_lstm_output, tf_hidden_state = answer_gru(tf_answer_input, tf_hidden_state)
+    tf_probabilities = tf.concat(B_k_predictions, axis=1, name='probabilities')
+    return tf_probabilities
 
 
 def create_dense_layer(input_layer, input_size, output_size, activation=None, include_bias=True, name=None):

@@ -3,18 +3,11 @@ Reads passage with LSTM. Outputs answer with LSTM."""
 import config
 import json
 import unittest2
-import pprint
 import gensim
 import spacy
 import numpy as np
 
-
 nlp = spacy.load('en_vectors_glove_md')  # python -m spacy download en
-#nlp = spacy.load('en')
-
-
-apple = nlp('apple').vector
-
 
 def load_squad_dataset_from_file(squad_filename):
     all_paragraphs = []
@@ -122,18 +115,45 @@ def invert_dictionary(dictionary):
     return inv_dictionary
 
 
-def construct_embeddings_for_vocab(vocab_dict):
+def look_up_glove_embeddings(vocab_dict, glove_emb_path=config.GLOVE_200_FILE):
+    """Find a GloVe embedding for each word in
+    index_to_word, if it exists. Create a dictionary
+    mapping from words to GloVe vectors and return it."""
+    word_to_glove = {}
+    with open(glove_emb_path, 'rb') as f:
+        for line in f:
+            line_tokens = line.split()
+            glove_word = line_tokens[0].lower().decode('utf-8')
+            if glove_word in vocab_dict.keys():
+                glove_emb = [float(line_token) for line_token in line_tokens[1:]]
+                word_to_glove[glove_word] = glove_emb
+
+    return word_to_glove
+
+
+def construct_embeddings_for_vocab(vocab_dict, use_spacy_not_glove=True):
     """Creates matrix to hold embeddings for words in vocab, ordered by index in vocabulary.
     Intended to be used as lookup embedding tensor.
 
     Returns: embedding matrix for all words in the vocab with an associated embedding."""
+    word_to_glove = {}
+    if not use_spacy_not_glove:
+        word_to_glove = look_up_glove_embeddings(vocab_dict)
+        word_to_glove[''] = np.zeros([config.GLOVE_EMB_SIZE])
+        print('Word_to_glove size: %s' % len(word_to_glove))
     m = len(vocab_dict.keys())
-    np_embeddings = np.zeros([m, config.SPACY_GLOVE_EMB_SIZE])
+    np_embeddings = np.zeros([m, config.GLOVE_EMB_SIZE])
     for each_word in vocab_dict:
         index = vocab_dict[each_word]
-        embedding = nlp(each_word)
+        if use_spacy_not_glove:
+            embedding = nlp(each_word).vector
+        else:
+            if each_word in word_to_glove.keys():
+                embedding = word_to_glove[each_word]
+            else:
+                embedding = np.zeros([config.GLOVE_EMB_SIZE])
         #print(embedding.vector)
-        np_embeddings[index, :] = embedding.vector
+        np_embeddings[index, :] = embedding
 
     return np_embeddings
 

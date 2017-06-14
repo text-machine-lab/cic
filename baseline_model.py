@@ -6,15 +6,15 @@ import config
 import baseline_model_func
 import numpy as np
 import os
+import random
 
 # CONTROL PANEL ########################################################################################################
 
 LEARNING_RATE = .0001
 NUM_PARAGRAPHS = 50
-RNN_HIDDEN_DIM = 150
+RNN_HIDDEN_DIM = 800
 NUM_EXAMPLES_TO_PRINT = 40
 TRAIN_FRAC = 0.8
-PREDICT_PROBABILITIES = True  # False maybe not work properly
 VALIDATE_PROPER_INPUTS = True
 RESTORE_FROM_SAVE = False
 TRAIN_MODEL_BEFORE_PREDICTION = True
@@ -26,8 +26,13 @@ PRINT_ACCURACY_EVERY_N_BATCHES = None
 BATCH_SIZE = 20
 STOP_TOKEN_REWARD = .1  # Must be less than 1
 TURN_OFF_TF_LOGGING = True
+USE_SPACY_NOT_GLOVE = False  # Use Spacy GloVe embeddings or Twitter Glove embeddings
+SHUFFLE_EXAMPLES = False
 
 # PRE-PROCESSING #######################################################################################################
+
+if not USE_SPACY_NOT_GLOVE:
+    config.GLOVE_EMB_SIZE = 200
 
 if not os.path.exists(config.BASELINE_MODEL_SAVE_DIR):
     os.makedirs(config.BASELINE_MODEL_SAVE_DIR)
@@ -52,6 +57,8 @@ vocabulary_size = len(vocab_dict)
 print('Len vocabulary: %s' % vocabulary_size)
 print('Flatting paragraphs into examples')
 examples = sdt.convert_paragraphs_to_flat_format(tk_paragraphs)
+if SHUFFLE_EXAMPLES:
+    random.shuffle(examples)
 print('Converting each example to numpy arrays')
 np_questions, np_answers, np_contexts, ids, np_as \
     = sdt.generate_numpy_features_from_squad_examples(examples, vocab_dict,
@@ -64,9 +71,9 @@ num_examples = np_questions.shape[0]
 print('Number of examples: %s' % np_questions.shape[0])
 
 contexts = [example[2] for example in examples]
-np_context_lengths = np.array([len(context.split()) for context in contexts])
+np_context_lengths = np.array([len(context.split()) if len(context.split()) <= config.MAX_CONTEXT_WORDS else config.MAX_CONTEXT_WORDS for context in contexts])
 questions = [example[0] for example in examples]
-np_question_lengths = np.array([len(question.split()) for question in questions])
+np_question_lengths = np.array([len(question.split()) if len(question.split()) <= config.MAX_QUESTION_WORDS else config.MAX_QUESTION_WORDS for question in questions])
 print('Average context length: %s' % np.mean(np_context_lengths))
 print('Context length deviation: %s' % np.std(np_context_lengths))
 print('Max context length: %s' % np.max(np_context_lengths))
@@ -84,7 +91,7 @@ for i in range(np_answers.shape[0]):
         num_empty_answers += 1
 print('Fraction of empty answer vectors (should be close to zero): %s' % (num_empty_answers / num_examples))
 print('Loading embeddings for each word in vocabulary')
-np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict)
+np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict, use_spacy_not_glove=USE_SPACY_NOT_GLOVE)
 num_embs = np_embeddings.shape[0]
 emb_size = np_embeddings.shape[1]
 num_empty_embs = 0
@@ -145,37 +152,10 @@ with tf.variable_scope('MATCH_GRU'):
 
     Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM]), Hr], axis=1, name='Hr_tilda')
 
-with tf.name_scope('POINTER_VARIABLES'):
-    V = tf.get_variable('V', shape=[RNN_HIDDEN_DIM, RNN_HIDDEN_DIM], initializer=tf.contrib.layers.xavier_initializer())
-    W_a = tf.get_variable('W_a', shape=[RNN_HIDDEN_DIM, RNN_HIDDEN_DIM], initializer=tf.contrib.layers.xavier_initializer())
-    b_a = tf.get_variable('b_a', shape=[RNN_HIDDEN_DIM], initializer=tf.contrib.layers.xavier_initializer())
-    v = tf.get_variable('w', shape=[RNN_HIDDEN_DIM, 1], initializer=tf.contrib.layers.xavier_initializer())
-    c = tf.get_variable('c', shape=[1, 1], initializer=tf.contrib.layers.xavier_initializer())
 
-with tf.variable_scope('POINTER_NET') as scope:
-    answer_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
-    tf_hidden_state = answer_gru.zero_state(tf_batch_size, tf.float32)
-    B_k_predictions = []
-
-    for i in range(config.MAX_ANSWER_WORDS):
-        with tf.name_scope('ANSWER_TIMESTEP'):
-            Hr_tilda_V_matmul = tf.reshape(tf.matmul(tf.reshape(Hr_tilda, [-1, RNN_HIDDEN_DIM]), V),
-                                           [-1, Hr_tilda.shape[1].value, RNN_HIDDEN_DIM], name='Hr_tilda_V_matmul')
-            F_k = tf.tanh(Hr_tilda_V_matmul + tf.reshape(tf.matmul(tf_hidden_state, W_a) + b_a,
-                                                         [-1, 1, RNN_HIDDEN_DIM]), name='F_k')  # Should broadcast
-            F_k_v_matmul = tf.reshape(tf.matmul(tf.reshape(F_k, [-1, RNN_HIDDEN_DIM]), v), [-1, Hr_tilda.shape[1].value, 1],
-                                      name='F_k_v_matmul')
-            B_k = tf.add(F_k_v_matmul, c, name='B_k')
-            B_k_predictions.append(tf.reshape(B_k, [-1, 1, Hr_tilda.shape[1].value], name='B_k_reshape'))
-            tf_answer_input = tf.reshape(tf.matmul(Hr_tilda, tf.nn.softmax(B_k), transpose_a=True), [-1, RNN_HIDDEN_DIM],
-                                         name='answer_input')
-
-            if i > 0:
-                scope.reuse_variables()
-            tf_lstm_output, tf_hidden_state = answer_gru(tf_answer_input, tf_hidden_state)
 
 with tf.name_scope('OUTPUT'):
-    tf_probabilities = tf.concat(B_k_predictions, axis=1, name='probabilities')
+    tf_probabilities = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
 
     tf_predictions = tf.argmax(tf_probabilities, axis=2, name='predictions')
 
@@ -210,6 +190,7 @@ if VALIDATE_PROPER_INPUTS:
     # Validates that embedding lookups for the first 1000 contexts and questions
     # look up the correct embedding for each index, and that the embedding is
     # the same as that stored in the embedding table and in the spacy nlp object.
+
     sample_size = 1000
     if sample_size > num_examples:
         sample_size = num_examples
@@ -218,30 +199,31 @@ if VALIDATE_PROPER_INPUTS:
     num_filled_embs = np.count_nonzero(np_sample_context_embs)
     frac_filled_embs = 1 - num_filled_embs / np_sample_context_embs.size
     print('Fraction of words in context without embeddings: %s' % frac_filled_embs)
-    for i in range(sample_size):
-        context_tokens = contexts[i].split()
-        for j in range(np_sample_context_embs.shape[1]):
-            if j < len(context_tokens):
-                word = context_tokens[j]
-                word_vector = sdt.nlp(word).vector
-                word_index = vocab_dict[word]
-                stored_vector = np_embeddings[word_index, :]
-                if not np.isclose(word_vector, np.zeros([config.SPACY_GLOVE_EMB_SIZE])).all():
-                    assert np.isclose(np_sample_context_embs[i, j, :], word_vector).all()
-                    assert np.isclose(np_sample_context_embs[i, j, :], stored_vector).all()
-    fd={tf_question_indices: np_questions[:sample_size, :]}
-    np_sample_question_embs = tf_question_embs.eval(fd)
-    for i in range(sample_size):
-        question_tokens = questions[i].split()
-        for j in range(np_sample_question_embs.shape[1]):
-            if j < len(question_tokens):
-                word = question_tokens[j]
-                word_index = vocab_dict[word]
-                stored_vector = np_embeddings[word_index, :]
-                word_vector = sdt.nlp(word).vector
-                if not np.isclose(word_vector, np.zeros([config.SPACY_GLOVE_EMB_SIZE])).all():
-                    assert np.isclose(np_sample_question_embs[i, j, :], word_vector).all()
-                    assert np.isclose(np_sample_question_embs[i, j, :], stored_vector).all()
+    if USE_SPACY_NOT_GLOVE:
+        for i in range(sample_size):
+            context_tokens = contexts[i].split()
+            for j in range(np_sample_context_embs.shape[1]):
+                if j < len(context_tokens):
+                    word = context_tokens[j]
+                    word_vector = sdt.nlp(word).vector
+                    word_index = vocab_dict[word]
+                    stored_vector = np_embeddings[word_index, :]
+                    if not np.isclose(word_vector, np.zeros([config.GLOVE_EMB_SIZE])).all():
+                        assert np.isclose(np_sample_context_embs[i, j, :], word_vector).all()
+                        assert np.isclose(np_sample_context_embs[i, j, :], stored_vector).all()
+        fd={tf_question_indices: np_questions[:sample_size, :]}
+        np_sample_question_embs = tf_question_embs.eval(fd)
+        for i in range(sample_size):
+            question_tokens = questions[i].split()
+            for j in range(np_sample_question_embs.shape[1]):
+                if j < len(question_tokens):
+                    word = question_tokens[j]
+                    word_index = vocab_dict[word]
+                    stored_vector = np_embeddings[word_index, :]
+                    word_vector = sdt.nlp(word).vector
+                    if not np.isclose(word_vector, np.zeros([config.GLOVE_EMB_SIZE])).all():
+                        assert np.isclose(np_sample_question_embs[i, j, :], word_vector).all()
+                        assert np.isclose(np_sample_question_embs[i, j, :], stored_vector).all()
     print('Inputs validated')
 
 # TRAINING #############################################################################################################
@@ -298,8 +280,8 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
         epoch_word_accuracy = np.mean(word_accuracies)
         epoch_frac_zero = np.mean(frac_zeros)
         print('Epoch loss: %s' % epoch_loss)
-        print('Epoch TRAIN EM Score: %s' % epoch_accuracy)
-        print('Epoch TRAIN Word Score: %s' % epoch_word_accuracy)
+        print('Epoch TRAIN EM Accuracy: %s' % epoch_accuracy)
+        print('Epoch TRAIN Word Accuracy: %s' % epoch_word_accuracy)
         print('Epoch fraction of zero vector answers: %s' % epoch_frac_zero)
         print('Saving model %s' % epoch)
         saver.save(sess, config.BASELINE_MODEL_SAVE_DIR,
@@ -340,8 +322,8 @@ if PREDICT_ON_TRAINING_EXAMPLES or TRAIN_MODEL_BEFORE_PREDICTION:
     train_accuracy, train_word_accuracy = sdt.compute_mask_accuracy(np_answers[:val_index_start, :],
                                                         np_train_predictions,
                                                         np_answer_masks[:val_index_start, :])
-    print('Total TRAIN EM Score: %s' % train_accuracy)
-    print('Total TRAIN Word Score: %s' % train_word_accuracy)
+    print('Total TRAIN EM Accuracy: %s' % train_accuracy)
+    print('Total TRAIN Word Accuracy: %s' % train_word_accuracy)
 
 # PREDICTION ###########################################################################################################
 
@@ -373,9 +355,12 @@ if PRINT_VALIDATION_EXAMPLES:
         print('Context: %s' % contexts[val_index_start + i])
         print()
 
-val_accuracy = sdt.compute_multi_label_accuracy(np_val_predictions, np_answers[val_index_start:])
+val_accuracy, val_word_accuracy = sdt.compute_mask_accuracy(np_val_predictions,
+                                                            np_answers[val_index_start:],
+                                                            np_answer_masks[val_index_start:])
 
-print('VAL EM Score: %s' % val_accuracy)
+print('VAL EM Accuracy: %s' % val_accuracy)
+print('VAL Word Accuracy: %s' % val_word_accuracy)
 
 print('Prediction shape: %s' % str(np_val_predictions.shape))
 
