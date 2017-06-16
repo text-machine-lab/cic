@@ -43,6 +43,29 @@ def convert_paragraphs_to_flat_format(paragraphs):
     return qacs_tuples
 
 
+def remove_excess_spaces_from_paragraphs(paragraphs):
+    """Uses split and join to remove all excess spaces from paragraphs."""
+    clean_paragraphs = []
+    for each_paragraph in paragraphs:
+        clean_paragraph = {}
+        clean_paragraph['context'] = ' '.join(each_paragraph['context'].split())
+        clean_paragraph['qas'] = []
+        for each_qas in each_paragraph['qas']:
+            clean_qas = {}
+            clean_qas['question'] = ' '.join(each_qas['question'].split())
+            clean_qas['id'] = each_qas['id']
+            clean_qas['answers'] = []
+            for each_answer in each_qas['answers']:
+                clean_answer = {}
+                clean_answer['text'] = ' '.join(each_answer['text'].split())
+                clean_answer['answer_start'] = each_answer['answer_start']
+
+                clean_qas['answers'].append(clean_answer)
+            clean_paragraph['qas'].append(clean_qas)
+        clean_paragraphs.append(clean_paragraph)
+    return clean_paragraphs
+
+
 def convert_numpy_array_to_strings(np_examples, vocabulary):
     """Converts a numpy array of indices into a list of strings.
 
@@ -280,6 +303,7 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
                         for answer_index in range(len(answer_tokens)):
                             if answer_index < config.MAX_ANSWER_WORDS and context_index + answer_index < config.MAX_CONTEXT_WORDS:
                                 np_answers[i, answer_index] = context_index + answer_index + 1  # index 0 -> ''
+                    break
         else:
             for j, each_token in enumerate(answer_tokens):
                 if j < max_answer_words and each_token in vocab_dict:
@@ -325,17 +349,21 @@ def compute_mask_accuracy(np_first, np_second, np_mask):
     m = np_first.shape[0]
     num_correct = 0
 
-    accuracies = []
+    rows_correct = 0
     np_same = (np_first == np_second)
     np_same_important = np.multiply(np_same, np_mask)
     element_wise_accuracy = np.sum(np_same_important) / np.sum(np_mask)
-    row_accuracy = np.sum(np_same_important, axis=1) / np.sum(np_mask, axis=1)
-    accuracy = np.mean(row_accuracy > 0.9999)
-
+    for row in range(m):
+        mask_sum = np.sum(np_mask[row, :])
+        row_sum = np.sum(np_same_important[row, :])
+        if mask_sum != 0:
+            if row_sum / mask_sum > .9999:
+                rows_correct += 1
+    accuracy = rows_correct / m
     return accuracy, element_wise_accuracy
 
 
-def compute_answer_mask(np_answers, stop_token_weight=(1 / (config.MAX_CONTEXT_WORDS + 1))):
+def compute_answer_mask(np_answers, stop_token=True, zero_weight=(1 / (config.MAX_CONTEXT_WORDS + 1))):
     """Returns a numpy 2D array filled with ones up to
     and including the first zero in each row of np_answers. This zero
     is interpretted as the stop token and all remaining
@@ -350,11 +378,18 @@ def compute_answer_mask(np_answers, stop_token_weight=(1 / (config.MAX_CONTEXT_W
     print(np_non_zeros)
     np_mask = np.ones([m, n])
     for i in range(m):
-        for j in range(n-1):
-            if not np_non_zeros[i, j]:
-                np_mask[i, j] = stop_token_weight
-                np_mask[i, (j+1):] = 0
-                break
+        np_zeros = np.zeros([n])
+        if np.array_equal(np_non_zeros[i, :], np_zeros):
+            np_mask[i, :] = np_zeros  # no reward for empty answer
+        else:
+            for j in range(n-1):
+                if not np_non_zeros[i, j]:
+                    if stop_token:
+                        np_mask[i, j] = zero_weight
+                        np_mask[i, (j+1):] = 0
+                    else:
+                        np_mask[i, j:] = zero_weight
+                    break
     return np_mask
 
 
@@ -371,6 +406,8 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         np_answers = np.array([[1, 2, 0, 0], [5, 0, 0, 0], [6, 7, 8, 0], [0, 0, 0, 0], [1, 2, 3, 4]])
         np_mask = compute_answer_mask(np_answers)
         print(np_mask)
+        np_zeros = np.zeros([5, 6])
+        assert np.array_equal(compute_answer_mask(np_zeros), np_zeros)
         # assert np.array_equal(np_mask, np.array([[1, 1, .005, 0], [1, .005, 0, 0], [1, 1, 1, 1], [.005, 0, 0, 0], [1, 1, 1, 1]]))
 
     def test_load_squad_dataset_from_file(self):
@@ -603,6 +640,20 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         print(word_accuracy)
         assert word_accuracy == 0.84375
         assert accuracy == 0.5
+
+        same_accuracy, same_word_accuracy = compute_mask_accuracy(np_first, np_first, np_mask)
+        assert same_accuracy == 1.0
+        assert same_word_accuracy == 1.0
+
+    def test_remove_excess_spaces_from_paragraphs(self):
+        space_filled_paragraph = {'context': 'lots  of  spaces ', 'qas':
+                                  [{'question': ' question space  space space',
+                                    'id': 55,
+                                    'answers': [{'text': 'lots  of', 'answer_start': 10}]}]}
+        [clean_paragraph] = remove_excess_spaces_from_paragraphs([space_filled_paragraph])
+        assert clean_paragraph['context'] == 'lots of spaces'
+        assert clean_paragraph['qas'][0]['question'] == 'question space space space'
+        assert clean_paragraph['qas'][0]['answers'][0]['text'] == 'lots of'
 
 
 

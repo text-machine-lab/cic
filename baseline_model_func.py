@@ -162,7 +162,7 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
                               initializer=tf.contrib.layers.xavier_initializer())
         b_a = tf.get_variable('b_a', shape=[hidden_size], initializer=tf.contrib.layers.xavier_initializer())
         v = tf.get_variable('w', shape=[hidden_size, 1], initializer=tf.contrib.layers.xavier_initializer())
-        c = tf.get_variable('c', shape=[1, 1], initializer=tf.contrib.layers.xavier_initializer())
+        c = tf.get_variable('c', shape=[1, 1, 1], initializer=tf.contrib.layers.xavier_initializer())
 
     with tf.variable_scope('POINTER_NET') as scope:
         answer_gru = tf.contrib.rnn.GRUCell(num_units=hidden_size)

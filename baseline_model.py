@@ -24,10 +24,10 @@ PRINT_TRAINING_EXAMPLES = True
 PRINT_VALIDATION_EXAMPLES = False
 PRINT_ACCURACY_EVERY_N_BATCHES = None
 BATCH_SIZE = 20
-STOP_TOKEN_REWARD = .1  # Must be less than 1
+STOP_TOKEN_REWARD = .3  # Must be less than 1
 TURN_OFF_TF_LOGGING = True
-USE_SPACY_NOT_GLOVE = False  # Use Spacy GloVe embeddings or Twitter Glove embeddings
-SHUFFLE_EXAMPLES = False
+USE_SPACY_NOT_GLOVE = True  # Use Spacy GloVe embeddings or Twitter Glove embeddings
+SHUFFLE_EXAMPLES = True
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -45,18 +45,22 @@ tf_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions
 
 print('Loading SQuAD dataset')
 paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
+#paragraphs = [paragraph for paragraph in paragraphs if len(paragraph['context'].split()) <= config.MAX_CONTEXT_WORDS]
 if NUM_PARAGRAPHS is not None:
     paragraphs = paragraphs[:NUM_PARAGRAPHS]
+
 print('Processing %s paragraphs...' % len(paragraphs))
 print('Tokenizing paragraph samples')
 tk_paragraphs = sdt.tokenize_paragraphs(paragraphs)
+print('Removing excess spaces')
+clean_paragraphs = sdt.remove_excess_spaces_from_paragraphs(tk_paragraphs)
 print('Building vocabulary')
-vocab_dict = sdt.generate_vocabulary_for_paragraphs(tk_paragraphs).token2id
+vocab_dict = sdt.generate_vocabulary_for_paragraphs(clean_paragraphs).token2id
 vocabulary = sdt.invert_dictionary(vocab_dict)  # becomes list of words essentially
 vocabulary_size = len(vocab_dict)
 print('Len vocabulary: %s' % vocabulary_size)
-print('Flatting paragraphs into examples')
-examples = sdt.convert_paragraphs_to_flat_format(tk_paragraphs)
+print('Flattening paragraphs into examples')
+examples = sdt.convert_paragraphs_to_flat_format(clean_paragraphs)
 if SHUFFLE_EXAMPLES:
     random.shuffle(examples)
 print('Converting each example to numpy arrays')
@@ -64,32 +68,66 @@ np_questions, np_answers, np_contexts, ids, np_as \
     = sdt.generate_numpy_features_from_squad_examples(examples, vocab_dict,
                                                       answer_indices_from_context=True,
                                                       answer_is_span=False)
-np_answer_masks = sdt.compute_answer_mask(np_answers, stop_token_weight=STOP_TOKEN_REWARD)
-print('Fraction of non-empty answer words (includes stop token): %s' % np.mean(np_answer_masks))
+np_answer_masks = sdt.compute_answer_mask(np_answers, stop_token=False, zero_weight=STOP_TOKEN_REWARD)
+print('Mean answer mask value: %s' % np.mean(np_answer_masks))
 print('Maximum index in answers should be less than max context size + 1: %s' % np_answers.max())
 num_examples = np_questions.shape[0]
 print('Number of examples: %s' % np_questions.shape[0])
 
 contexts = [example[2] for example in examples]
-np_context_lengths = np.array([len(context.split()) if len(context.split()) <= config.MAX_CONTEXT_WORDS else config.MAX_CONTEXT_WORDS for context in contexts])
+np_context_lengths = np.array([len(context.split()) for context in contexts])
 questions = [example[0] for example in examples]
-np_question_lengths = np.array([len(question.split()) if len(question.split()) <= config.MAX_QUESTION_WORDS else config.MAX_QUESTION_WORDS for question in questions])
+np_question_lengths = np.array([len(question.split()) for question in questions])
+answers = [example[1] for example in examples]
+np_answer_lengths = np.array([len(answer.split()) for answer in answers])
 print('Average context length: %s' % np.mean(np_context_lengths))
 print('Context length deviation: %s' % np.std(np_context_lengths))
 print('Max context length: %s' % np.max(np_context_lengths))
+print('Average question length: %s' % np.mean(np_question_lengths))
+print('Question length deviation: %s' % np.std(np_question_lengths))
+print('Max question length: %s' % np.max(np_question_lengths))
+print('Average answer length: %s' % np.mean(np_answer_lengths))
+print('Answer length deviation: %s' % np.std(np_answer_lengths))
+print('Max answer length: %s' % np.max(np_answer_lengths))
 
 if VALIDATE_PROPER_INPUTS:
+    print('Validating inputs...')
+    assert np_contexts.shape[0] == num_examples
+    assert np_contexts.shape[0] == np_answers.shape[0]
+    assert np_answers.shape[0] == np_questions.shape[0]
+    assert np_questions.shape[0] == np_question_lengths.shape[0]
+    assert np_question_lengths.shape[0] == np_answer_lengths.shape[0]
+    assert np_answer_lengths.shape[0] == np_context_lengths.shape[0]
+    assert np_context_lengths.shape[0] == np_answer_masks.shape[0]
+    assert np_contexts.shape[1] == config.MAX_CONTEXT_WORDS
+    assert np_answers.shape[1] == config.MAX_ANSWER_WORDS
+    assert np_questions.shape[1] == config.MAX_QUESTION_WORDS
     reconstructed_contexts = sdt.convert_numpy_array_to_strings(np_contexts, vocabulary)
+    reconstructed_answers = sdt.convert_numpy_array_answers_to_strings(np_answers, contexts)
+    reconstructed_questions = sdt.convert_numpy_array_to_strings(np_questions, vocabulary)
+    num_corrupted_answers = 0
     for i in range(num_examples):
-        assert reconstructed_contexts[i] == contexts[i] or len(contexts) > config.MAX_CONTEXT_WORDS
-
-    print('Validated numpy arrays for contexts.')
+        assert (reconstructed_contexts[i] == contexts[i] or len(contexts[i].split()) > config.MAX_CONTEXT_WORDS)
+        assert (reconstructed_questions[i] == questions[i] or len(questions[i].split()) > config.MAX_QUESTION_WORDS)
+        if not (reconstructed_answers[i] == answers[i]
+                or len(answers[i].split()) > config.MAX_ANSWER_WORDS
+                or len(contexts[i].split()) > config.MAX_CONTEXT_WORDS):
+            num_corrupted_answers += 1
+            # print('Answer: %s' % answers[i])
+            # print('Answer reconstruct: %s' % reconstructed_answers[i])
+            # print('Answer vector: %s' % np_answers[i, :])
+            # print('Example #: %s' % i)
+            # print('Context: %s' % contexts[i])
+            # print('Len context: %s' % len(contexts[i].split()))
+    print('Fraction of corrupted answers: %s' % (num_corrupted_answers / num_examples))
+    print('Validated numpy arrays for contexts and questions')
 
 num_empty_answers = 0
 for i in range(np_answers.shape[0]):
     if np.isclose(np_answers[i], np.zeros([np_answers.shape[1]])).all():
         num_empty_answers += 1
 print('Fraction of empty answer vectors (should be close to zero): %s' % (num_empty_answers / num_examples))
+
 print('Loading embeddings for each word in vocabulary')
 np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict, use_spacy_not_glove=USE_SPACY_NOT_GLOVE)
 num_embs = np_embeddings.shape[0]
@@ -134,25 +172,31 @@ with tf.name_scope('INPUT_EMBEDDINGS'):
 print('Question embeddings shape: %s' % str(tf_question_embs.shape))
 print('Context embeddings shape: %s' % str(tf_context_embs.shape))
 
+# Removed sequence lengths from question and context encoders
+
 # Model
 with tf.variable_scope('QUESTION_ENCODER'):
     question_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
     tf_question_outputs, tf_question_state = tf.nn.dynamic_rnn(question_gru, tf_question_embs,
-                                                            sequence_length=tf_question_lengths, dtype=tf.float32)
+                                                            sequence_length=None, dtype=tf.float32)
+
+# tf_question_state_reshape = tf.reshape(tf_question_state, [-1, 1, RNN_HIDDEN_DIM])
+# tf_question_state_tile = tf.tile(tf_question_state_reshape, [1, config.MAX_CONTEXT_WORDS, 1])
+# tf_context_encoder_input = tf.concat([tf_context_embs, tf_question_state_tile], axis=2)
+# assert tf_context_encoder_input.shape[1].value == config.MAX_CONTEXT_WORDS
+# assert tf_context_encoder_input.shape[2].value == RNN_HIDDEN_DIM + config.GLOVE_EMB_SIZE
 
 with tf.variable_scope('CONTEXT_ENCODER'):
     context_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
     tf_context_outputs, tf_context_state = tf.nn.dynamic_rnn(context_gru, tf_context_embs,
-                                                          sequence_length=tf_context_lengths, dtype=tf.float32)
+                                                          sequence_length=None, dtype=tf.float32)
 
 # Pretty sure this is correct so far...
 
 with tf.variable_scope('MATCH_GRU'):
     Hr = baseline_model_func.match_gru(tf_question_outputs, tf_context_outputs, tf_batch_size, RNN_HIDDEN_DIM)
 
-    Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM]), Hr], axis=1, name='Hr_tilda')
-
-
+    Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM]), tf_context_outputs], axis=1, name='Hr_tilda')
 
 with tf.name_scope('OUTPUT'):
     tf_probabilities = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
@@ -162,8 +206,9 @@ with tf.name_scope('OUTPUT'):
 # Calculate loss per each
 with tf.name_scope('LOSS'):
     tf_total_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_probabilities, labels=tf_answer_indices)
-    tf_masked_losses = tf.multiply(tf_total_losses, tf_answer_masks)
-    tf_total_loss = tf.divide(tf.reduce_sum(tf_masked_losses), tf.reduce_sum(tf_answer_masks), name='loss')
+    #tf_masked_losses = tf.multiply(tf_total_losses, tf_answer_masks)
+    #tf_total_loss = tf.divide(tf.reduce_sum(tf_masked_losses), tf.reduce_sum(tf_answer_masks), name='loss')
+    tf_total_loss = tf.reduce_mean(tf_total_losses)
 
 # Visualize
 baseline_model_func.create_tensorboard_visualization('cic')
@@ -316,7 +361,7 @@ if PRINT_TRAINING_EXAMPLES and (TRAIN_MODEL_BEFORE_PREDICTION or PREDICT_ON_TRAI
         print('Prediction array: %s' % np_train_predictions[i, :])
         print('Question: %s' % examples[i][0])
         print('Len context: %s' % len(contexts[i]))
-        print()
+        print('Answer mask: %s' % np.around(np_answer_masks[i, :], decimals=1))
 
 if PREDICT_ON_TRAINING_EXAMPLES or TRAIN_MODEL_BEFORE_PREDICTION:
     train_accuracy, train_word_accuracy = sdt.compute_mask_accuracy(np_answers[:val_index_start, :],
@@ -361,7 +406,6 @@ val_accuracy, val_word_accuracy = sdt.compute_mask_accuracy(np_val_predictions,
 
 print('VAL EM Accuracy: %s' % val_accuracy)
 print('VAL Word Accuracy: %s' % val_word_accuracy)
-
 print('Prediction shape: %s' % str(np_val_predictions.shape))
 
 
