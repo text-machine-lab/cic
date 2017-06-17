@@ -11,7 +11,7 @@ import random
 # CONTROL PANEL ########################################################################################################
 
 LEARNING_RATE = .0001
-NUM_PARAGRAPHS = 50
+NUM_PARAGRAPHS = None
 RNN_HIDDEN_DIM = 800
 NUM_EXAMPLES_TO_PRINT = 40
 TRAIN_FRAC = 0.8
@@ -24,10 +24,11 @@ PRINT_TRAINING_EXAMPLES = True
 PRINT_VALIDATION_EXAMPLES = False
 PRINT_ACCURACY_EVERY_N_BATCHES = None
 BATCH_SIZE = 20
-STOP_TOKEN_REWARD = .3  # Must be less than 1
+STOP_TOKEN_REWARD = 2
 TURN_OFF_TF_LOGGING = True
 USE_SPACY_NOT_GLOVE = True  # Use Spacy GloVe embeddings or Twitter Glove embeddings
-SHUFFLE_EXAMPLES = True
+SHUFFLE_EXAMPLES = False
+SIMILARITY_LOSS_CONST = 120
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -49,6 +50,11 @@ paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
 if NUM_PARAGRAPHS is not None:
     paragraphs = paragraphs[:NUM_PARAGRAPHS]
 
+for paragraph in paragraphs:
+    text = paragraph['context']
+    if 'congregatio' in text.lower().split():
+        print(text)
+
 print('Processing %s paragraphs...' % len(paragraphs))
 print('Tokenizing paragraph samples')
 tk_paragraphs = sdt.tokenize_paragraphs(paragraphs)
@@ -68,7 +74,7 @@ np_questions, np_answers, np_contexts, ids, np_as \
     = sdt.generate_numpy_features_from_squad_examples(examples, vocab_dict,
                                                       answer_indices_from_context=True,
                                                       answer_is_span=False)
-np_answer_masks = sdt.compute_answer_mask(np_answers, stop_token=False, zero_weight=STOP_TOKEN_REWARD)
+np_answer_masks = sdt.compute_answer_mask(np_answers, stop_token=True, zero_weight=STOP_TOKEN_REWARD)
 print('Mean answer mask value: %s' % np.mean(np_answer_masks))
 print('Maximum index in answers should be less than max context size + 1: %s' % np_answers.max())
 num_examples = np_questions.shape[0]
@@ -137,6 +143,7 @@ print('Embedding shape: %s' % str(np_embeddings[0, :].shape))
 for i in range(num_embs):
     if np.isclose(np_embeddings[i, :], np.zeros([emb_size])).all():
         num_empty_embs += 1
+        # print(vocabulary[i])
 fraction_empty_embs = num_empty_embs / num_embs
 print('Fraction of empty embeddings in vocabulary: %s' % fraction_empty_embs)
 index_prob_size = config.MAX_CONTEXT_WORDS
@@ -199,16 +206,25 @@ with tf.variable_scope('MATCH_GRU'):
     Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM]), tf_context_outputs], axis=1, name='Hr_tilda')
 
 with tf.name_scope('OUTPUT'):
-    tf_probabilities = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
+    tf_log_probabilities = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
 
-    tf_predictions = tf.argmax(tf_probabilities, axis=2, name='predictions')
+    tf_probabilities = tf.nn.softmax(tf_log_probabilities)
+
+    tf_predictions = tf.argmax(tf_log_probabilities, axis=2, name='predictions')
 
 # Calculate loss per each
 with tf.name_scope('LOSS'):
-    tf_total_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_probabilities, labels=tf_answer_indices)
-    #tf_masked_losses = tf.multiply(tf_total_losses, tf_answer_masks)
-    #tf_total_loss = tf.divide(tf.reduce_sum(tf_masked_losses), tf.reduce_sum(tf_answer_masks), name='loss')
-    tf_total_loss = tf.reduce_mean(tf_total_losses)
+    tf_total_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_log_probabilities, labels=tf_answer_indices)
+
+    tf_total_similarity_loss = 0
+    for i in range(config.MAX_ANSWER_WORDS - 1):
+        tf_pair_similarity_loss = tf.reduce_sum(tf.multiply(tf_probabilities[:, i, :], tf_probabilities[:, i + 1, :]), axis=1)
+        tf_total_similarity_loss += tf.reduce_mean(tf_pair_similarity_loss)
+
+    tf_masked_losses = tf.multiply(tf_total_losses, tf_answer_masks)
+    tf_total_loss = tf.divide(tf.reduce_sum(tf_masked_losses), tf.reduce_sum(tf_answer_masks), name='loss')
+    tf_total_loss += tf_total_similarity_loss * SIMILARITY_LOSS_CONST
+    #tf_total_loss = tf.reduce_mean(tf_total_losses) + tf_total_similarity_loss * SIMILARITY_LOSS_CONST
 
 # Visualize
 baseline_model_func.create_tensorboard_visualization('cic')
@@ -291,6 +307,7 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
     for epoch in range(NUM_EPOCHS):
         print('Epoch: %s' % epoch)
         losses = []
+        sim_losses = []
         accuracies = []
         word_accuracies = []
         frac_zeros =[]
@@ -301,7 +318,7 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
             np_context_batch = np_contexts[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE, :]
             np_context_length_batch = np_context_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
             np_question_length_batch = np_question_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
-            np_batch_predictions, np_loss, _ = sess.run([tf_predictions, tf_total_loss, train_op],
+            np_batch_predictions, np_loss, _, np_sim_loss = sess.run([tf_predictions, tf_total_loss, train_op, tf_total_similarity_loss],
                                                         feed_dict={tf_question_indices: np_question_batch,
                                                                    tf_question_lengths: np_question_length_batch,
                                                                    tf_answer_indices: np_answer_batch,
@@ -318,13 +335,16 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
             if PRINT_ACCURACY_EVERY_N_BATCHES is not None and i % PRINT_ACCURACY_EVERY_N_BATCHES == 0:
                 print('Batch TRAIN EM Score: %s' % np.mean(accuracies))
             losses.append(np_loss)
+            sim_losses.append(np_sim_loss)
             if epoch == NUM_EPOCHS - 1:  # last epoch
                 all_train_predictions.append(np_batch_predictions)
         epoch_loss = np.mean(losses)
+        epoch_sim_loss = np.mean(sim_losses)
         epoch_accuracy = np.mean(accuracies)
         epoch_word_accuracy = np.mean(word_accuracies)
         epoch_frac_zero = np.mean(frac_zeros)
         print('Epoch loss: %s' % epoch_loss)
+        print('Epoch sim loss: %s' % epoch_sim_loss)
         print('Epoch TRAIN EM Accuracy: %s' % epoch_accuracy)
         print('Epoch TRAIN Word Accuracy: %s' % epoch_word_accuracy)
         print('Epoch fraction of zero vector answers: %s' % epoch_frac_zero)
@@ -339,7 +359,7 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
 
 if PREDICT_ON_TRAINING_EXAMPLES:
     print('Predicting on training examples...')
-    np_train_predictions = baseline_model_func.predict_on_examples(model_io,
+    np_train_predictions, np_train_probabilities = baseline_model_func.predict_on_examples(model_io,
                                                                    np_questions[:val_index_start, :],
                                                                    np_question_lengths[:val_index_start],
                                                                    np_answers[:val_index_start, :],
@@ -375,7 +395,7 @@ if PREDICT_ON_TRAINING_EXAMPLES or TRAIN_MODEL_BEFORE_PREDICTION:
 print('\n######################################\n')
 print('Predicting...')
 
-np_val_predictions = baseline_model_func.predict_on_examples(model_io,
+np_val_predictions, np_val_probabilities = baseline_model_func.predict_on_examples(model_io,
                                                              np_questions[val_index_start:, :],
                                                              np_question_lengths[val_index_start:],
                                                              np_answers[val_index_start:, :],
@@ -403,6 +423,8 @@ if PRINT_VALIDATION_EXAMPLES:
 val_accuracy, val_word_accuracy = sdt.compute_mask_accuracy(np_val_predictions,
                                                             np_answers[val_index_start:],
                                                             np_answer_masks[val_index_start:])
+
+print(np_val_probabilities[0, :, :])
 
 print('VAL EM Accuracy: %s' % val_accuracy)
 print('VAL Word Accuracy: %s' % val_word_accuracy)

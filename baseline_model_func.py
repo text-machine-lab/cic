@@ -51,6 +51,7 @@ def predict_on_examples(model_io,
     num_val_examples = np_questions.shape[0]
     num_val_batches = int(num_val_examples / batch_size) + 1  # +1 to include remainder examples
     all_val_predictions = []
+    all_val_probabilities = []
     for batch_index in range(num_val_batches):
         current_start_index = batch_size * batch_index
         if current_start_index + batch_size >= num_val_examples:
@@ -60,8 +61,8 @@ def predict_on_examples(model_io,
         if effective_batch_size == 0:
             break
         current_end_index = current_start_index + effective_batch_size
-        np_batch_val_predictions = \
-            tf.get_default_session().run(model_io['predictions'],
+        np_batch_val_predictions, np_batch_val_probabilities = \
+            tf.get_default_session().run([model_io['predictions'], model_io['probabilities']],
                      feed_dict={model_io['questions']: np_questions[current_start_index:current_end_index, :],
                                 model_io['question_lengths']: np_question_lengths[current_start_index:current_end_index],
                                 model_io['answers']: np_answers[current_start_index:current_end_index, :],
@@ -70,8 +71,10 @@ def predict_on_examples(model_io,
                                 model_io['context_lengths']: np_context_lengths[current_start_index:current_end_index],
                                 model_io['batch_size']: effective_batch_size})
         all_val_predictions.append(np_batch_val_predictions)
+        all_val_probabilities.append(np_batch_val_probabilities)
     np_val_predictions = np.concatenate(all_val_predictions, axis=0)
-    return np_val_predictions
+    np_val_probabilities = np.concatenate(all_val_probabilities, axis=0)
+    return np_val_predictions, np_val_probabilities
 
 
 def build_gru(gru_hidden_dim, tf_batch_size, inputs, num_time_steps, gru_scope=None,
