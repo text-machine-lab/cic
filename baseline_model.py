@@ -7,28 +7,61 @@ import baseline_model_func
 import numpy as np
 import os
 import random
+import pickle as pkl
+import sys
+import json
+
+sdt.initialize_nlp()
 
 # CONTROL PANEL ########################################################################################################
 
-LEARNING_RATE = .0001
-NUM_PARAGRAPHS = None
-RNN_HIDDEN_DIM = 800
+LEARNING_RATE = .001
+NUM_PARAGRAPHS = 50
+RNN_HIDDEN_DIM = 200
 NUM_EXAMPLES_TO_PRINT = 40
 TRAIN_FRAC = 0.8
 VALIDATE_PROPER_INPUTS = True
 RESTORE_FROM_SAVE = False
 TRAIN_MODEL_BEFORE_PREDICTION = True
-PREDICT_ON_TRAINING_EXAMPLES = True  # Predict on all training examples after training
+PREDICT_ON_TRAINING_EXAMPLES = False  # Predict on all training examples after training
 NUM_EPOCHS = 100
 PRINT_TRAINING_EXAMPLES = True
 PRINT_VALIDATION_EXAMPLES = False
 PRINT_ACCURACY_EVERY_N_BATCHES = None
-BATCH_SIZE = 20
+BATCH_SIZE = 25
 STOP_TOKEN_REWARD = 2
 TURN_OFF_TF_LOGGING = True
 USE_SPACY_NOT_GLOVE = True  # Use Spacy GloVe embeddings or Twitter Glove embeddings
-SHUFFLE_EXAMPLES = False
-SIMILARITY_LOSS_CONST = 120
+SHUFFLE_EXAMPLES = True
+SIMILARITY_LOSS_CONST = 0
+SAVE_VALIDATION_PREDICTIONS = True
+PRODUCE_OUTPUT_PREDICTIONS_FILE = False
+
+# SUBMISSION ###########################################################################################################
+
+# If True, we are in submit mode. Model should take in a json file, make predictions, and produce an output file.
+SUBMISSION_MODE = False
+if len(sys.argv) > 1:
+    SUBMISSION_MODE = True
+    print('Entering submission mode')
+    config.SQUAD_TRAIN_SET = sys.argv[1]
+    TRAIN_MODEL_BEFORE_PREDICTION = False
+    NUM_PARAGRAPHS = None
+    TRAIN_FRAC = 0
+    RESTORE_FROM_SAVE = True
+    PRINT_TRAINING_EXAMPLES = False
+    PRINT_VALIDATION_EXAMPLES = False
+    PRINT_ACCURACY_EVERY_N_BATCHES = None
+    SAVE_VALIDATION_PREDICTIONS = False
+    VALIDATE_PROPER_INPUTS = False
+    PREDICT_ON_TRAINING_EXAMPLES = False
+    PRODUCE_OUTPUT_PREDICTIONS_FILE = True
+
+if len(sys.argv) > 2:
+    config.SUBMISSION_PREDICTIONS_FILE = sys.argv[2]
+
+if len(sys.argv) > 3:
+    config.BASELINE_MODEL_SAVE_DIR = sys.argv[3]
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -41,8 +74,8 @@ if not os.path.exists(config.BASELINE_MODEL_SAVE_DIR):
 if TURN_OFF_TF_LOGGING:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-tf_config = tf.ConfigProto()
-tf_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
+#tf_config = tf.ConfigProto()
+# tf_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
 
 print('Loading SQuAD dataset')
 paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
@@ -50,16 +83,12 @@ paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
 if NUM_PARAGRAPHS is not None:
     paragraphs = paragraphs[:NUM_PARAGRAPHS]
 
-for paragraph in paragraphs:
-    text = paragraph['context']
-    if 'congregatio' in text.lower().split():
-        print(text)
-
 print('Processing %s paragraphs...' % len(paragraphs))
 print('Tokenizing paragraph samples')
 tk_paragraphs = sdt.tokenize_paragraphs(paragraphs)
 print('Removing excess spaces')
 clean_paragraphs = sdt.remove_excess_spaces_from_paragraphs(tk_paragraphs)
+
 print('Building vocabulary')
 vocab_dict = sdt.generate_vocabulary_for_paragraphs(clean_paragraphs).token2id
 vocabulary = sdt.invert_dictionary(vocab_dict)  # becomes list of words essentially
@@ -79,6 +108,29 @@ print('Mean answer mask value: %s' % np.mean(np_answer_masks))
 print('Maximum index in answers should be less than max context size + 1: %s' % np_answers.max())
 num_examples = np_questions.shape[0]
 print('Number of examples: %s' % np_questions.shape[0])
+
+# Check fraction of answers that can be detokenized
+num_detokenized_answers = 0
+for i in range(len(paragraphs)):
+    for j in range(len(paragraphs[i]['qas'])):
+        for k in range(len(paragraphs[i]['qas'][j]['answers'])):
+            text = paragraphs[i]['qas'][j]['answers'][k]['text']
+            normalized_text = sdt.normalize_answer(text)
+
+            tk_text = clean_paragraphs[i]['qas'][j]['answers'][k]['text']
+            detk_text = sdt.detokenize_string(tk_text)
+            normalized_detk_text = sdt.normalize_answer(detk_text)
+
+            if normalized_text == normalized_detk_text:
+                num_detokenized_answers += 1
+            elif i < 10:
+                print('Normalized text: %s' % normalized_text)
+                print('Tokenized text: %s' % tk_text)
+                print('Detokenized text: %s' % detk_text)
+                print('Normalized detokenized text: %s' % normalized_detk_text)
+                print()
+
+print('Fraction detokenized answers: %s' % (num_detokenized_answers / len(examples)))
 
 contexts = [example[2] for example in examples]
 np_context_lengths = np.array([len(context.split()) for context in contexts])
@@ -183,9 +235,9 @@ print('Context embeddings shape: %s' % str(tf_context_embs.shape))
 
 # Model
 with tf.variable_scope('QUESTION_ENCODER'):
-    question_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
-    tf_question_outputs, tf_question_state = tf.nn.dynamic_rnn(question_gru, tf_question_embs,
-                                                            sequence_length=None, dtype=tf.float32)
+    question_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
+    tf_question_outputs, tf_question_state = tf.nn.dynamic_rnn(question_lstm, tf_question_embs,
+                                                               sequence_length=None, dtype=tf.float32)
 
 # tf_question_state_reshape = tf.reshape(tf_question_state, [-1, 1, RNN_HIDDEN_DIM])
 # tf_question_state_tile = tf.tile(tf_question_state_reshape, [1, config.MAX_CONTEXT_WORDS, 1])
@@ -194,27 +246,32 @@ with tf.variable_scope('QUESTION_ENCODER'):
 # assert tf_context_encoder_input.shape[2].value == RNN_HIDDEN_DIM + config.GLOVE_EMB_SIZE
 
 with tf.variable_scope('CONTEXT_ENCODER'):
-    context_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
-    tf_context_outputs, tf_context_state = tf.nn.dynamic_rnn(context_gru, tf_context_embs,
-                                                          sequence_length=None, dtype=tf.float32)
+    context_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
+    tf_context_outputs, tf_context_state = tf.nn.dynamic_rnn(context_lstm, tf_context_embs,
+                                                             sequence_length=None, dtype=tf.float32)
 
 # Pretty sure this is correct so far...
 
 with tf.variable_scope('MATCH_GRU'):
-    Hr = baseline_model_func.match_gru(tf_question_outputs, tf_context_outputs, tf_batch_size, RNN_HIDDEN_DIM)
+    with tf.variable_scope('FORWARD'):
+        Hr_forward = baseline_model_func.match_gru(tf_question_outputs, tf_context_outputs, tf_batch_size, RNN_HIDDEN_DIM)
+    with tf.variable_scope('BACKWARD'):
+        Hr_backward = baseline_model_func.match_gru(tf_question_outputs, tf.reverse(tf_context_outputs, [1]), tf_batch_size, RNN_HIDDEN_DIM)
+    Hr = tf.concat([Hr_forward, tf.reverse(Hr_backward, [1])], axis=2)
 
-    Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM]), tf_context_outputs], axis=1, name='Hr_tilda')
+    Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM * 2]), Hr], axis=1, name='Hr_tilda')
 
 with tf.name_scope('OUTPUT'):
     tf_log_probabilities = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
 
     tf_probabilities = tf.nn.softmax(tf_log_probabilities)
 
-    tf_predictions = tf.argmax(tf_log_probabilities, axis=2, name='predictions')
+    tf_predictions = tf.argmax(tf_probabilities, axis=2, name='predictions')
 
 # Calculate loss per each
 with tf.name_scope('LOSS'):
-    tf_total_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_log_probabilities, labels=tf_answer_indices)
+    tf_total_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_log_probabilities,
+                                                                     labels=tf_answer_indices)
 
     tf_total_similarity_loss = 0
     for i in range(config.MAX_ANSWER_WORDS - 1):
@@ -231,7 +288,7 @@ baseline_model_func.create_tensorboard_visualization('cic')
 
 train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(tf_total_loss)
 init = tf.global_variables_initializer()
-sess = tf.InteractiveSession(config=tf_config)
+sess = tf.InteractiveSession()
 assert tf_embeddings not in tf.trainable_variables()
 with tf.name_scope("SAVER"):
     saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
@@ -258,7 +315,7 @@ if VALIDATE_PROPER_INPUTS:
     fd={tf_context_indices: np_contexts[:sample_size, :]}
     np_sample_context_embs = tf_context_embs.eval(fd)
     num_filled_embs = np.count_nonzero(np_sample_context_embs)
-    frac_filled_embs = 1 - num_filled_embs / np_sample_context_embs.size
+    frac_filled_embs = 1 - (num_filled_embs / np_sample_context_embs.size)
     print('Fraction of words in context without embeddings: %s' % frac_filled_embs)
     if USE_SPACY_NOT_GLOVE:
         for i in range(sample_size):
@@ -326,7 +383,9 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
                                                                    tf_context_indices: np_context_batch,
                                                                    tf_context_lengths: np_context_length_batch,
                                                                    tf_batch_size: BATCH_SIZE})
-            accuracy, word_accuracy = sdt.compute_mask_accuracy(np_answer_batch, np_batch_predictions, np_answer_mask_batch)
+            accuracy, word_accuracy = sdt.compute_mask_accuracy(np_answer_batch,
+                                                                np_batch_predictions,
+                                                                np_answer_mask_batch)
             frac_zero = sdt.compute_multi_label_accuracy(np_batch_predictions,
                                                          np.zeros([BATCH_SIZE, config.MAX_ANSWER_WORDS]))
             accuracies.append(accuracy)
@@ -362,8 +421,6 @@ if PREDICT_ON_TRAINING_EXAMPLES:
     np_train_predictions, np_train_probabilities = baseline_model_func.predict_on_examples(model_io,
                                                                    np_questions[:val_index_start, :],
                                                                    np_question_lengths[:val_index_start],
-                                                                   np_answers[:val_index_start, :],
-                                                                   np_answer_masks[:val_index_start, :],
                                                                    np_contexts[:val_index_start, :],
                                                                    np_context_lengths[:val_index_start],
                                                                    BATCH_SIZE)
@@ -390,6 +447,7 @@ if PREDICT_ON_TRAINING_EXAMPLES or TRAIN_MODEL_BEFORE_PREDICTION:
     print('Total TRAIN EM Accuracy: %s' % train_accuracy)
     print('Total TRAIN Word Accuracy: %s' % train_word_accuracy)
 
+
 # PREDICTION ###########################################################################################################
 
 print('\n######################################\n')
@@ -398,18 +456,35 @@ print('Predicting...')
 np_val_predictions, np_val_probabilities = baseline_model_func.predict_on_examples(model_io,
                                                              np_questions[val_index_start:, :],
                                                              np_question_lengths[val_index_start:],
-                                                             np_answers[val_index_start:, :],
-                                                             np_answer_masks[val_index_start:, :],
                                                              np_contexts[val_index_start:, :],
                                                              np_context_lengths[val_index_start:],
                                                              BATCH_SIZE)
 
+all_val_predictions = sdt.convert_numpy_array_answers_to_strings(np_val_predictions, contexts[val_index_start:],
+                                                                 answer_is_span=False, zero_stop_token=True)
+
+if SAVE_VALIDATION_PREDICTIONS:
+    print('Saving validation predictions to: %s' % config.VALIDATION_PREDICTIONS_FILE)
+
+    pkl.dump([examples[val_index_start:], all_val_predictions], open(config.VALIDATION_PREDICTIONS_FILE, 'wb'))
+
+if PRODUCE_OUTPUT_PREDICTIONS_FILE:
+    print('Saving submission predictions file to: %s' % config.SUBMISSION_PREDICTIONS_FILE)
+    final_predictions = {}
+    for i in range(num_examples):
+        current_prediction = all_val_predictions[i]
+        current_id = examples[i][3]
+        current_answer = answers[i]
+        final_predictions[current_id] = sdt.detokenize_string(current_prediction)
+    with open(config.SUBMISSION_PREDICTIONS_FILE, 'w') as json_file:
+        json.dump(final_predictions, json_file)
+
 if PRINT_VALIDATION_EXAMPLES:
-    # Print validation examples
     predictions \
         = sdt.convert_numpy_array_answers_to_strings(np_val_predictions[:NUM_EXAMPLES_TO_PRINT, :],
-                                                     contexts[val_index_start:val_index_start+NUM_EXAMPLES_TO_PRINT],
+                                                     contexts[val_index_start:val_index_start + NUM_EXAMPLES_TO_PRINT],
                                                      answer_is_span=False, zero_stop_token=True)
+    # Print validation examples
     for i, each_prediction in enumerate(predictions):
         print('Prediction: %s' % each_prediction)
         print('Answer: %s' % examples[val_index_start + i][1])
@@ -420,15 +495,14 @@ if PRINT_VALIDATION_EXAMPLES:
         print('Context: %s' % contexts[val_index_start + i])
         print()
 
-val_accuracy, val_word_accuracy = sdt.compute_mask_accuracy(np_val_predictions,
-                                                            np_answers[val_index_start:],
-                                                            np_answer_masks[val_index_start:])
+if not SUBMISSION_MODE:
+    val_accuracy, val_word_accuracy = sdt.compute_mask_accuracy(np_val_predictions,
+                                                                np_answers[val_index_start:],
+                                                                np_answer_masks[val_index_start:])
 
-print(np_val_probabilities[0, :, :])
-
-print('VAL EM Accuracy: %s' % val_accuracy)
-print('VAL Word Accuracy: %s' % val_word_accuracy)
-print('Prediction shape: %s' % str(np_val_predictions.shape))
+    print('VAL EM Accuracy: %s' % val_accuracy)
+    print('VAL Word Accuracy: %s' % val_word_accuracy)
+    print('Prediction shape: %s' % str(np_val_predictions.shape))
 
 
 
