@@ -170,17 +170,20 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
         tf_lstm_output = tf.zeros([batch_size, hidden_size])
         B_k_predictions = []
 
+        num_time_steps = Hr_tilda.shape[1].value
+        assert num_time_steps == config.MAX_CONTEXT_WORDS + 1
+
         for i in range(config.MAX_ANSWER_WORDS):
             with tf.name_scope('ANSWER_TIMESTEP'):
                 Hr_tilda_V_matmul = tf.reshape(tf.matmul(tf.reshape(Hr_tilda, [-1, hidden_size * 2]), V),
-                                               [-1, Hr_tilda.shape[1].value, hidden_size], name='Hr_tilda_V_matmul')
+                                               [-1, num_time_steps, hidden_size], name='Hr_tilda_V_matmul')
                 F_k = tf.tanh(Hr_tilda_V_matmul + tf.reshape(tf.matmul(tf_lstm_output, W_a) + b_a,
                                                              [-1, 1, hidden_size]), name='F_k')  # Should broadcast
                 F_k_v_matmul = tf.reshape(tf.matmul(tf.reshape(F_k, [-1, hidden_size]), v),
-                                          [-1, Hr_tilda.shape[1].value, 1],
+                                          [-1, num_time_steps, 1],
                                           name='F_k_v_matmul')
                 B_k = tf.add(F_k_v_matmul, c, name='B_k')
-                B_k_predictions.append(tf.reshape(B_k, [-1, 1, Hr_tilda.shape[1].value], name='B_k_reshape'))
+                B_k_predictions.append(tf.reshape(B_k, [-1, 1, num_time_steps], name='B_k_reshape'))
 
                 tf_answer_input = tf.reshape(tf.matmul(Hr_tilda, tf.nn.softmax(B_k), transpose_a=True),
                                              [-1, hidden_size * 2],

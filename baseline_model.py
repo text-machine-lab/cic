@@ -26,7 +26,7 @@ TRAIN_MODEL_BEFORE_PREDICTION = True
 PREDICT_ON_TRAINING_EXAMPLES = False  # Predict on all training examples after training
 NUM_EPOCHS = 100
 PRINT_TRAINING_EXAMPLES = True
-PRINT_VALIDATION_EXAMPLES = False
+PRINT_VALIDATION_EXAMPLES = True
 PRINT_ACCURACY_EVERY_N_BATCHES = None
 BATCH_SIZE = 25
 STOP_TOKEN_REWARD = 2
@@ -270,17 +270,20 @@ with tf.name_scope('OUTPUT'):
 
 # Calculate loss per each
 with tf.name_scope('LOSS'):
-    tf_total_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_log_probabilities,
-                                                                     labels=tf_answer_indices)
+    time_step_losses = []
+    for time_step in range(config.MAX_ANSWER_WORDS):
+        time_step_losses.append(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_log_probabilities[:, time_step, :],
+                                                                               labels=tf_answer_indices[:, time_step]))
+    tf_total_losses = tf.stack(time_step_losses, axis=1)
 
-    tf_total_similarity_loss = 0
-    for i in range(config.MAX_ANSWER_WORDS - 1):
-        tf_pair_similarity_loss = tf.reduce_sum(tf.multiply(tf_probabilities[:, i, :], tf_probabilities[:, i + 1, :]), axis=1)
-        tf_total_similarity_loss += tf.reduce_mean(tf_pair_similarity_loss)
+    # tf_total_similarity_loss = 0
+    # for i in range(config.MAX_ANSWER_WORDS - 1):
+    #     tf_pair_similarity_loss = tf.reduce_sum(tf.multiply(tf_probabilities[:, i, :], tf_probabilities[:, i + 1, :]), axis=1)
+    #     tf_total_similarity_loss += tf.reduce_mean(tf_pair_similarity_loss)
 
     tf_masked_losses = tf.multiply(tf_total_losses, tf_answer_masks)
-    tf_total_loss = tf.divide(tf.reduce_sum(tf_masked_losses), tf.reduce_sum(tf_answer_masks), name='loss')
-    tf_total_loss += tf_total_similarity_loss * SIMILARITY_LOSS_CONST
+    tf_total_loss = tf.reduce_mean(tf_masked_losses)
+    #tf_total_loss += tf_total_similarity_loss  * SIMILARITY_LOSS_CONST
     #tf_total_loss = tf.reduce_mean(tf_total_losses) + tf_total_similarity_loss * SIMILARITY_LOSS_CONST
 
 # Visualize
@@ -375,7 +378,7 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
             np_context_batch = np_contexts[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE, :]
             np_context_length_batch = np_context_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
             np_question_length_batch = np_question_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
-            np_batch_predictions, np_loss, _, np_sim_loss = sess.run([tf_predictions, tf_total_loss, train_op, tf_total_similarity_loss],
+            np_batch_predictions, np_loss, _ = sess.run([tf_predictions, tf_total_loss, train_op],
                                                         feed_dict={tf_question_indices: np_question_batch,
                                                                    tf_question_lengths: np_question_length_batch,
                                                                    tf_answer_indices: np_answer_batch,
@@ -394,16 +397,13 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
             if PRINT_ACCURACY_EVERY_N_BATCHES is not None and i % PRINT_ACCURACY_EVERY_N_BATCHES == 0:
                 print('Batch TRAIN EM Score: %s' % np.mean(accuracies))
             losses.append(np_loss)
-            sim_losses.append(np_sim_loss)
             if epoch == NUM_EPOCHS - 1:  # last epoch
                 all_train_predictions.append(np_batch_predictions)
         epoch_loss = np.mean(losses)
-        epoch_sim_loss = np.mean(sim_losses)
         epoch_accuracy = np.mean(accuracies)
         epoch_word_accuracy = np.mean(word_accuracies)
         epoch_frac_zero = np.mean(frac_zeros)
         print('Epoch loss: %s' % epoch_loss)
-        print('Epoch sim loss: %s' % epoch_sim_loss)
         print('Epoch TRAIN EM Accuracy: %s' % epoch_accuracy)
         print('Epoch TRAIN Word Accuracy: %s' % epoch_word_accuracy)
         print('Epoch fraction of zero vector answers: %s' % epoch_frac_zero)

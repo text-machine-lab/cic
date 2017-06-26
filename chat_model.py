@@ -5,26 +5,32 @@ import gensim
 import spacy
 import numpy as np
 import chat_model_func
+import baseline_model_func
 import squad_dataset_tools as sdt
 import tensorflow as tf
 import random
+import os
 
 # CONFIGURATION ########################################################################################################
 
-LEARNING_RATE = .0005
-NUM_CONVERSATIONS = 100
+LEARNING_RATE = .0001
+NUM_CONVERSATIONS = 20
 NUM_EXAMPLES_TO_PRINT = 20
 MAX_MESSAGE_LENGTH = 20
 LEARNED_EMBEDDING_SIZE = 100
-RNN_HIDDEN_DIM = 800
+RNN_HIDDEN_DIM = 1000
 TRAIN_FRACTION = 0.8
-BATCH_SIZE = 1
-NUM_EPOCHS = 40
+BATCH_SIZE = 10
+NUM_EPOCHS = 50
+RESTORE_FROM_SAVE = False
 REVERSE_INPUT_MESSAGE = True
 SHUFFLE_EXAMPLES = True
 STOP_TOKEN = '<STOP>'
 
 # PRE-PROCESSING #######################################################################################################
+
+if not os.path.exists(config.CHAT_MODEL_SAVE_DIR):
+    os.makedirs(config.CHAT_MODEL_SAVE_DIR)
 
 DELIMITER = ' +++$+++ '
 movie_lines_file = open(config.CORNELL_MOVIE_LINES_FILE, 'rb')
@@ -143,30 +149,33 @@ tf_message_embs = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message, name
 
 with tf.variable_scope('MESSAGE_ENCODER'):
     message_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
-    tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_gru, tf_message_embs, dtype=tf.float32)
+    message_gru_reverse = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
+    tf_message_outputs, tf_message_state = tf.nn.bidirectional_dynamic_rnn(message_gru, message_gru_reverse,
+                                                                           tf_message_embs, dtype=tf.float32)
 
-tf_message_state_tile = tf.tile(tf.reshape(tf_message_state, [-1, 1, RNN_HIDDEN_DIM]), [1, MAX_MESSAGE_LENGTH, 1])
+tf_message_state_tile = tf.tile(tf.reshape(tf_message_state, [-1, 1, RNN_HIDDEN_DIM * 2]), [1, MAX_MESSAGE_LENGTH, 1])
 
 with tf.variable_scope('RESPONSE_DECODER'):
-    response_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
+    response_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM * 2)
     tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_gru, tf_message_state_tile, dtype=tf.float32)
 
 with tf.variable_scope('OUTPUT_PREDICTION'):
     W_v = tf.get_variable('output_weight',
-                          shape=[RNN_HIDDEN_DIM, vocabulary_length],
+                          shape=[RNN_HIDDEN_DIM * 2, vocabulary_length],
                           initializer=tf.contrib.layers.xavier_initializer())
     W_b = tf.get_variable('output_bias',
                           shape=[vocabulary_length],
                           initializer=tf.contrib.layers.xavier_initializer())
 
-    # tf_vocab_compare_output = tf.reshape(tf.matmul(tf.reshape(tf_response_outputs, [-1, RNN_HIDDEN_DIM]), W_v) + W_b,
-    #                                      [-1, LEARNED_EMBEDDING_SIZE])
-    #
-    # tf_response_log_probabilities = tf.reshape(tf.matmul(tf_vocab_compare_output, tf_learned_embeddings, transpose_b=True),
-    #                                            [-1, MAX_MESSAGE_LENGTH, vocabulary_length])
-
-    tf_response_log_probabilities = tf.reshape(tf.matmul(tf.reshape(tf_response_outputs, [-1, RNN_HIDDEN_DIM]), W_v) + W_b,
+    tf_response_log_probabilities = tf.reshape(tf.matmul(tf.reshape(tf_response_outputs, [-1, RNN_HIDDEN_DIM * 2]), W_v) + W_b,
                                                [-1, MAX_MESSAGE_LENGTH, vocabulary_length])
+
+    # Replacement in case reshaping happens incorrectly.
+    # tf_word_log_probabilities = []
+    # for j in range(tf.shape(tf_response_outputs)[1]):
+    #     tf_word_log_probability = tf.matmul(tf_response_outputs[:, j, :], W_v) + W_b
+    #     tf_word_log_probabilities.append(tf_word_log_probability)
+    # tf_response_log_probabilities = tf.stack(tf_word_log_probabilities, axis=1)
 
     tf_response_probabilities = tf.nn.softmax(tf_response_log_probabilities)
 
@@ -174,8 +183,11 @@ with tf.variable_scope('OUTPUT_PREDICTION'):
     print('tf_response_prediction shape: %s' % str(tf_response_prediction.get_shape()))
 
 with tf.variable_scope('LOSS'):
+    # tf_response_log_probabilities_flat = tf.reshape(tf_response_log_probabilities, [-1, vocabulary_length])
+    # tf_response_flat = tf.reshape(tf_response, [-1])
     tf_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_response_log_probabilities,
                                                                labels=tf_response)
+    # tf_losses = tf.reshape(tf_losses_flat, [-1, MAX_MESSAGE_LENGTH])
     tf_total_loss = tf.reduce_mean(tf.multiply(tf_losses, tf.cast(tf_response_mask, tf.float32)))
 
 train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(tf_total_loss)
@@ -183,39 +195,55 @@ init = tf.global_variables_initializer()
 sess = tf.InteractiveSession()
 sess.run(init)
 
+with tf.name_scope("SAVER"):
+    saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
+
 # TRAINING #############################################################################################################
+
+if RESTORE_FROM_SAVE:
+    print('Restoring from save...')
+    np_wv = W_v.eval()
+    baseline_model_func.restore_model_from_save(config.CHAT_MODEL_SAVE_DIR, var_list=tf.trainable_variables(), sess=sess)
+    np_wv_final = W_v.eval()
+    assert not np.array_equal(np_wv, np_wv_final)
 
 num_batches = int(num_examples * TRAIN_FRACTION / BATCH_SIZE)
 num_train_examples = num_batches * BATCH_SIZE
-np_train_message = np_message[:num_train_examples, :]
-np_train_response = np_response[:num_train_examples, :]
-train_examples = examples[:num_train_examples]
 
-for epoch in range(NUM_EPOCHS):
-    print('Epoch: %s' % epoch)
-    batch_losses = []
-    for batch_index in range(num_batches):
-        np_batch_message = np_train_message[batch_index * BATCH_SIZE:batch_index * BATCH_SIZE + BATCH_SIZE, :]
-        np_batch_response = np_train_response[batch_index * BATCH_SIZE:batch_index * BATCH_SIZE + BATCH_SIZE, :]
-        batch_loss, batch_response_predictions, _, batch_mask = sess.run([tf_total_loss, tf_response_prediction, train_op, tf_response_mask],
-                                                             feed_dict={tf_message: np_batch_message,
-                                                                        tf_response: np_batch_response})
-        batch_losses.append(batch_loss)
-    print('Epoch loss: %s' % np.mean(batch_losses))
+if num_train_examples > 0:
+    np_train_message = np_message[:num_train_examples, :]
+    np_train_response = np_response[:num_train_examples, :]
+    train_examples = examples[:num_train_examples]
 
-np_train_predictions = sess.run(tf_response_prediction, feed_dict={tf_message: np_train_message})
+    for epoch in range(NUM_EPOCHS):
+        print('Epoch: %s' % epoch)
+        batch_losses = []
+        for batch_index in range(num_batches):
+            np_batch_message = np_train_message[batch_index * BATCH_SIZE:batch_index * BATCH_SIZE + BATCH_SIZE, :]
+            np_batch_response = np_train_response[batch_index * BATCH_SIZE:batch_index * BATCH_SIZE + BATCH_SIZE, :]
+            batch_loss, batch_response_predictions, _, batch_mask = sess.run([tf_total_loss, tf_response_prediction, train_op, tf_response_mask],
+                                                                              feed_dict={tf_message: np_batch_message,
+                                                                                         tf_response: np_batch_response})
+            batch_losses.append(batch_loss)
+        print('Epoch loss: %s' % np.mean(batch_losses))
+        saver.save(sess, config.CHAT_MODEL_SAVE_DIR,
+                   global_step=epoch)  # Save model after every epoch
 
-train_predictions = sdt.convert_numpy_array_to_strings(np_train_predictions, vocabulary, stop_token=STOP_TOKEN)
+    np_train_predictions = sess.run(tf_response_prediction, feed_dict={tf_message: np_train_message})
 
-print('Printing training examples...')
-for i, each_prediction in enumerate(train_predictions):
-    if i < NUM_EXAMPLES_TO_PRINT:
-        print('Message: %s' % (' '.join(train_examples[i][0])))
-        print('Response: %s' % each_prediction)
-        print('Label array: %s' % np_train_response[i, :])
-        print('Prediction array: %s' % np_train_predictions[i, :])
+    train_predictions = sdt.convert_numpy_array_to_strings(np_train_predictions, vocabulary, stop_token=STOP_TOKEN)
+
+    print('Printing training examples...')
+    for i, each_prediction in enumerate(train_predictions):
+        if i < NUM_EXAMPLES_TO_PRINT:
+            print('Message: %s' % (' '.join(train_examples[i][0])))
+            print('Response: %s' % (' '.join(train_examples[i][1])))
+            print('Prediction: %s' % each_prediction)
+            print('Label array: %s' % np_train_response[i, :])
+            print('Prediction array: %s' % np_train_predictions[i, :])
 
 # PREDICTION ###########################################################################################################
+
 np_val_message = np_message[num_train_examples:, :]
 np_val_response = np_response[num_train_examples:, :]
 np_val_predictions = sess.run(tf_response_prediction, feed_dict={tf_message: np_val_message})
@@ -225,21 +253,34 @@ val_predictions = sdt.convert_numpy_array_to_strings(np_val_predictions, vocabul
 print('\nPrinting validation examples...')
 for i, each_prediction in enumerate(val_predictions):
     if i < NUM_EXAMPLES_TO_PRINT:
-        print('Message: %s' % (' '.join(val_examples[i][1])))
-        print('Response: %s' % each_prediction)
+        print('Message: %s' % (' '.join(val_examples[i][0])))
+        print('Response: %s' % (' '.join(val_examples[i][1])))
+        print('Prediction: %s' % each_prediction)
+        print('Message array: %s' % np_val_message[i, :])
         print('Response array: %s' % np_val_response[i, :])
         print('Prediction array: %s' % np_val_predictions[i, :])
 
 # CHAT #################################################################################################################
-# Cannot enter words that are out of vocabulary
-print('Chat with the chat bot! Enter a message:')
+
+print('\nChat with the chat bot! Enter a message:')
 while True:
     chat_message = input('You: ')
     tk_chat_message = nlp.tokenizer(chat_message.lower())
     tk_chat_tokens = [str(token) for token in tk_chat_message if str(token) != ' ' and str(token) in vocab_dict] + [STOP_TOKEN]
-    print(tk_chat_tokens)
+    #print(tk_chat_tokens)
     np_chat_message = chat_model_func.construct_numpy_from_messages([tk_chat_tokens], vocab_dict, MAX_MESSAGE_LENGTH)
+    if REVERSE_INPUT_MESSAGE:
+        np_chat_message = np.flip(np_chat_message, axis=1)
+
+    for i in range(np_val_message.shape[0]):
+        np_chat_message_flat = np.reshape(np_chat_message, [MAX_MESSAGE_LENGTH])
+        if np.array_equal(np_chat_message_flat, np_val_message[i, :]):
+            print(val_examples[i])
+            print(np_val_message[i, :])
+            print(np_chat_message_flat)
+    print(np_chat_message)
     np_chat_response = sess.run(tf_response_prediction, feed_dict={tf_message: np_chat_message})
+    print(np_chat_response)
     response = sdt.convert_numpy_array_to_strings(np_chat_response, vocabulary, stop_token=STOP_TOKEN)
     print('Bot: %s' % response[0])
 
