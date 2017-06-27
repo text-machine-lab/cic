@@ -262,7 +262,7 @@ with tf.variable_scope('MATCH_GRU'):
     Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM * 2]), Hr], axis=1, name='Hr_tilda')
 
 with tf.name_scope('OUTPUT'):
-    tf_log_probabilities = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
+    tf_log_probabilities, tf_selected_hidden_state = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
 
     tf_probabilities = tf.nn.softmax(tf_log_probabilities)
 
@@ -378,7 +378,7 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
             np_context_batch = np_contexts[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE, :]
             np_context_length_batch = np_context_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
             np_question_length_batch = np_question_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
-            np_batch_predictions, np_loss, _ = sess.run([tf_predictions, tf_total_loss, train_op],
+            np_batch_predictions, np_loss, _, np_selected_hidden_state = sess.run([tf_predictions, tf_total_loss, train_op, tf_selected_hidden_state],
                                                         feed_dict={tf_question_indices: np_question_batch,
                                                                    tf_question_lengths: np_question_length_batch,
                                                                    tf_answer_indices: np_answer_batch,
@@ -386,6 +386,8 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
                                                                    tf_context_indices: np_context_batch,
                                                                    tf_context_lengths: np_context_length_batch,
                                                                    tf_batch_size: BATCH_SIZE})
+            if epoch == 0 and i == 0:
+                print(np_selected_hidden_state[0, :])
             accuracy, word_accuracy = sdt.compute_mask_accuracy(np_answer_batch,
                                                                 np_batch_predictions,
                                                                 np_answer_mask_batch)

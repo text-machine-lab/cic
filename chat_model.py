@@ -14,17 +14,17 @@ import keras
 
 # CONFIGURATION ########################################################################################################
 
-LEARNING_RATE = .0001
-NUM_CONVERSATIONS = 20000
+LEARNING_RATE = .0005
+NUM_CONVERSATIONS = 100000
 NUM_EXAMPLES_TO_PRINT = 20
-MAX_MESSAGE_LENGTH = 20
+MAX_MESSAGE_LENGTH = 10
 LEARNED_EMBEDDING_SIZE = 200
 RNN_HIDDEN_DIM = 2000
 TRAIN_FRACTION = 0.8
 BATCH_SIZE = 20
-NUM_EPOCHS = 50
+NUM_EPOCHS = 100
 RESTORE_FROM_SAVE = False
-REVERSE_INPUT_MESSAGE = False
+REVERSE_INPUT_MESSAGE = True
 SHUFFLE_EXAMPLES = True
 STOP_TOKEN = '<STOP>'
 
@@ -169,24 +169,20 @@ tf_message_embs = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message, name
 
 with tf.variable_scope('MESSAGE_ENCODER'):
     message_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
-    message_state = message_lstm.zero_state(tf_batch_size, tf.float32)
+    tf_message_state = message_lstm.zero_state(tf_batch_size, tf.float32)
     for lstm_step in range(MAX_MESSAGE_LENGTH):
         with tf.variable_scope('ENCODER_STEP') as message_scope:
-            if lstm_step > 0:
-                message_scope.reuse_variables()
             tf_message_input = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message[:, lstm_step], name='message_timestep_input')
-            tf_message_output, tf_message_state = message_lstm(tf_message_input, message_state)
+            tf_message_output, tf_message_state = message_lstm(tf_message_input, tf_message_state)
 
 with tf.variable_scope('RESPONSE_DECODER'):
     response_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
-    response_state = tf_message_state  # response_lstm.zero_state(tf_batch_size, tf.float32)
+    tf_response_state = tf_message_state  # response_lstm.zero_state(tf_batch_size, tf.float32)
     tf_response_output = tf.zeros([tf_batch_size, RNN_HIDDEN_DIM])
     response_outputs = []
     for lstm_step in range(MAX_MESSAGE_LENGTH):
         with tf.variable_scope('DECODER_STEP') as response_scope:
-            if lstm_step > 0:
-                response_scope.reuse_variables()
-            tf_response_output, tf_response_state = response_lstm(tf_message_output, response_state)
+            tf_response_output, tf_response_state = response_lstm(tf_message_output, tf_response_state)
             response_outputs.append(tf_response_output)
 tf_response_outputs = tf.stack(response_outputs, axis=1, name='response_outputs')
 
@@ -252,28 +248,38 @@ if num_train_examples > 0 and NUM_EPOCHS > 0:
     train_examples = examples[:num_train_examples]
     for epoch in range(NUM_EPOCHS):
         print('Epoch: %s' % epoch)
-        batch_losses = []
+        all_batch_losses = []
         all_batch_predictions = []
         for batch_index in range(num_batches):
             np_batch_message = np_train_message[batch_index * BATCH_SIZE:batch_index * BATCH_SIZE + BATCH_SIZE, :]
             np_batch_response = np_train_response[batch_index * BATCH_SIZE:batch_index * BATCH_SIZE + BATCH_SIZE, :]
             assert np_batch_message.shape == (BATCH_SIZE, MAX_MESSAGE_LENGTH)
             assert np_batch_response.shape == (BATCH_SIZE, MAX_MESSAGE_LENGTH)
+
             batch_loss, batch_response_predictions, _, batch_mask = sess.run([tf_total_loss, tf_response_prediction, train_op, tf_response_mask],
                                                                               feed_dict={tf_message: np_batch_message,
                                                                                          tf_response: np_batch_response})
-            if np.isnan(batch_loss):
-                if np.greater_equal(batch_response_predictions, vocabulary_length).any():
-                    print('NaN and greater than vocab length!')
-                    print(np_batch_message)
-
-                    print(np_batch_response)
-                    print(batch_response_predictions)
-                else:
-                    print('NaN and less than vocab length!')
-            batch_losses.append(batch_loss)
+            # if batch_index == 0:
+            #     batch_message_reconstruct = sdt.convert_numpy_array_to_strings(np_batch_message, vocabulary)
+            #     batch_response_reconstruct = sdt.convert_numpy_array_to_strings(np_batch_response, vocabulary)
+            #     batch_prediction_reconstruct = sdt.convert_numpy_array_to_strings(batch_response_predictions, vocabulary,
+            #                                                                       stop_token=STOP_TOKEN)
+            #     print('Example batch:')
+            #     print(batch_message_reconstruct)
+            #     print(batch_response_reconstruct)
+            #     print(batch_prediction_reconstruct)
+            # if np.isnan(batch_loss):
+            #     if np.greater_equal(batch_response_predictions, vocabulary_length).any():
+            #         print('NaN and greater than vocab length!')
+            #         print(np_batch_message)
+            #
+            #         print(np_batch_response)
+            #         print(batch_response_predictions)
+            #     else:
+            #         print('NaN and less than vocab length!')
+            all_batch_losses.append(batch_loss)
             all_batch_predictions.append(batch_response_predictions)
-        print('Epoch loss: %s' % np.mean(batch_losses))
+        print('Epoch loss: %s' % np.mean(all_batch_losses))
         saver.save(sess, config.CHAT_MODEL_SAVE_DIR, global_step=epoch)  # Save model after every epoch
 
     np_train_predictions = np.concatenate(all_batch_predictions, axis=0)

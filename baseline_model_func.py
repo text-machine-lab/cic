@@ -165,8 +165,8 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
         c = tf.get_variable('c', shape=[1, 1, 1], initializer=tf.contrib.layers.xavier_initializer())
 
     with tf.variable_scope('POINTER_NET') as scope:
-        answer_gru = tf.contrib.rnn.LSTMCell(num_units=hidden_size)
-        tf_hidden_state = answer_gru.zero_state(batch_size, tf.float32)
+        answer_lstm = tf.contrib.rnn.LSTMCell(num_units=hidden_size)
+        tf_hidden_state = answer_lstm.zero_state(batch_size, tf.float32)
         tf_lstm_output = tf.zeros([batch_size, hidden_size])
         B_k_predictions = []
 
@@ -174,6 +174,8 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
         assert num_time_steps == config.MAX_CONTEXT_WORDS + 1
 
         for i in range(config.MAX_ANSWER_WORDS):
+            if i == 1:
+                tf_selected_hidden_state = tf_hidden_state
             with tf.name_scope('ANSWER_TIMESTEP'):
                 Hr_tilda_V_matmul = tf.reshape(tf.matmul(tf.reshape(Hr_tilda, [-1, hidden_size * 2]), V),
                                                [-1, num_time_steps, hidden_size], name='Hr_tilda_V_matmul')
@@ -190,9 +192,9 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
                                              name='answer_input')
                 if i > 0:
                     scope.reuse_variables()
-                tf_lstm_output, tf_hidden_state = answer_gru(tf_answer_input, tf_hidden_state)
+                tf_lstm_output, tf_hidden_state = answer_lstm(tf_answer_input, tf_hidden_state)
     tf_probabilities = tf.concat(B_k_predictions, axis=1, name='probabilities')
-    return tf_probabilities
+    return tf_probabilities, tf_selected_hidden_state
 
 
 def create_dense_layer(input_layer, input_size, output_size, activation=None, include_bias=True, name=None):
