@@ -100,7 +100,7 @@ def remove_excess_spaces_from_paragraphs(paragraphs):
     return clean_paragraphs
 
 
-def convert_numpy_array_to_strings(np_examples, vocabulary, stop_token=None):
+def convert_numpy_array_to_strings(np_examples, vocabulary, stop_token=None, keep_stop_token=False):
     """Converts a numpy array of indices into a list of strings.
 
     np_examples - m x n numpy array of ints, where m is the number of
@@ -110,6 +110,7 @@ def convert_numpy_array_to_strings(np_examples, vocabulary, stop_token=None):
 
     Returns: a list of strings, where each string is constructed from
     indices in the array as they appear in the vocabulary."""
+    assert stop_token is not None or not keep_stop_token
     m = np_examples.shape[0]
     n = np_examples.shape[1]
     examples = []
@@ -119,6 +120,10 @@ def convert_numpy_array_to_strings(np_examples, vocabulary, stop_token=None):
             word_index = np_examples[i][j]
             word = vocabulary[word_index]
             if stop_token is not None and word == stop_token:
+                if keep_stop_token:
+                    if j > 0:
+                        each_example += ' '
+                    each_example += stop_token
                 break
             if j > 0 and word != '':
                 each_example += ' '
