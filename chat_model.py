@@ -14,12 +14,12 @@ import keras
 
 # CONFIGURATION ########################################################################################################
 
-LEARNING_RATE = .0005
-NUM_CONVERSATIONS = 100000
+LEARNING_RATE = .0008
+NUM_CONVERSATIONS = None
 NUM_EXAMPLES_TO_PRINT = 20
 MAX_MESSAGE_LENGTH = 10
-LEARNED_EMBEDDING_SIZE = 200
-RNN_HIDDEN_DIM = 2000
+LEARNED_EMBEDDING_SIZE = 100
+RNN_HIDDEN_DIM = 1000
 TRAIN_FRACTION = 0.8
 BATCH_SIZE = 20
 NUM_EPOCHS = 100
@@ -27,6 +27,7 @@ RESTORE_FROM_SAVE = False
 REVERSE_INPUT_MESSAGE = True
 SHUFFLE_EXAMPLES = True
 STOP_TOKEN = '<STOP>'
+SEQ2SEQ_IMPLEMENTATION = 'homemade'  # 'homemade', 'dynamic_rnn', 'keras'
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -43,7 +44,7 @@ line_index = 0
 conversations = []
 id_to_message = {}
 for each_conversation_line in movie_conversations_file:
-    if line_index < NUM_CONVERSATIONS:
+    if NUM_CONVERSATIONS is None or line_index < NUM_CONVERSATIONS:
         conversation_data = each_conversation_line.split(DELIMITER)
         first_character_id = conversation_data[0]
         second_character_id = conversation_data[1]
@@ -154,51 +155,78 @@ tf_learned_embeddings = tf.get_variable('learned_embeddings',
                                         initializer=tf.contrib.layers.xavier_initializer())
 
 tf_message_embs = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message, name='message_embeddings')
-#
-# with tf.variable_scope('MESSAGE_ENCODER'):
-#     message_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
-#     message_gru_reverse = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
-#     tf_message_outputs, tf_message_state = tf.nn.bidirectional_dynamic_rnn(message_gru, message_gru_reverse,
-#                                                                            tf_message_embs, dtype=tf.float32)
-#
-# tf_message_state_tile = tf.tile(tf.reshape(tf_message_state, [-1, 1, RNN_HIDDEN_DIM * 2]), [1, MAX_MESSAGE_LENGTH, 1])
-#
-# with tf.variable_scope('RESPONSE_DECODER'):
-#     response_gru = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM * 2)
-#     tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_gru, tf_message_state_tile, dtype=tf.float32)
 
-with tf.variable_scope('MESSAGE_ENCODER'):
-    message_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
-    tf_message_state = message_lstm.zero_state(tf_batch_size, tf.float32)
-    for lstm_step in range(MAX_MESSAGE_LENGTH):
-        with tf.variable_scope('ENCODER_STEP') as message_scope:
-            tf_message_input = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message[:, lstm_step], name='message_timestep_input')
-            tf_message_output, tf_message_state = message_lstm(tf_message_input, tf_message_state)
+print('Creating sequence-to-sequence...')
 
-with tf.variable_scope('RESPONSE_DECODER'):
-    response_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
-    tf_response_state = tf_message_state  # response_lstm.zero_state(tf_batch_size, tf.float32)
-    tf_response_output = tf.zeros([tf_batch_size, RNN_HIDDEN_DIM])
-    response_outputs = []
-    for lstm_step in range(MAX_MESSAGE_LENGTH):
-        with tf.variable_scope('DECODER_STEP') as response_scope:
-            tf_response_output, tf_response_state = response_lstm(tf_message_output, tf_response_state)
-            response_outputs.append(tf_response_output)
-tf_response_outputs = tf.stack(response_outputs, axis=1, name='response_outputs')
+# Variables for transforming from message to response
+tf_response_mapping_w1 = tf.get_variable('response_mapping_w1',
+                                         shape=[RNN_HIDDEN_DIM, RNN_HIDDEN_DIM],
+                                         initializer=tf.contrib.layers.xavier_initializer())
+tf_response_mapping_b1 = tf.get_variable('response_mapping_b1',
+                                         shape=[RNN_HIDDEN_DIM],
+                                         initializer=tf.contrib.layers.xavier_initializer())
+tf_response_mapping_w2 = tf.get_variable('response_mapping_w2',
+                                         shape=[RNN_HIDDEN_DIM, RNN_HIDDEN_DIM],
+                                         initializer=tf.contrib.layers.xavier_initializer())
+tf_response_mapping_b2 = tf.get_variable('response_mapping_b2',
+                                         shape=[RNN_HIDDEN_DIM],
+                                         initializer=tf.contrib.layers.xavier_initializer())
 
-#model = keras.models.Sequential()
-# print('Creating sequence-to-sequence...')
-# message_lstm = keras.layers.recurrent.LSTM(RNN_HIDDEN_DIM)
-# tf_message_output = message_lstm(tf_message_embs)
-# tf_message_output_tile = tf.tile(tf.reshape(tf_message_output, [-1, 1, RNN_HIDDEN_DIM]), [1, MAX_MESSAGE_LENGTH, 1])
-# response_lstm = keras.layers.recurrent.LSTM(RNN_HIDDEN_DIM, return_sequences=True)
-# tf_response_outputs = response_lstm(tf_message_output_tile)
-# print('Creating output layer...')
-# probability_layer = keras.layers.core.Dense(vocabulary_length)
-# tf_response_log_probabilities = probability_layer(tf_response_outputs)
+if SEQ2SEQ_IMPLEMENTATION == 'dynamic_rnn':
+    with tf.variable_scope('MESSAGE_ENCODER'):
+        message_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
+        #message_gru_reverse = tf.contrib.rnn.GRUCell(num_units=RNN_HIDDEN_DIM)
+        tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs, dtype=tf.float32)
+
+    tf_latent_space_message = tf_message_outputs[:, -1, :]
+    tf_latent_space_middle = tf.nn.relu(tf.matmul(tf_latent_space_message, tf_response_mapping_w1) + tf_response_mapping_b1)
+    tf_latent_space_response = tf.nn.relu(tf.matmul(tf_latent_space_middle, tf_response_mapping_w2) + tf_response_mapping_b2)
+
+    tf_message_final_output_tile = tf.tile(tf.reshape(tf_latent_space_response, [-1, 1, RNN_HIDDEN_DIM]), [1, MAX_MESSAGE_LENGTH, 1])
+
+    with tf.variable_scope('RESPONSE_DECODER'):
+        response_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
+        tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_lstm, tf_message_final_output_tile,
+                                                                   dtype=tf.float32,
+                                                                   initial_state=tf_message_state)
+elif SEQ2SEQ_IMPLEMENTATION == 'homemade':
+    with tf.variable_scope('MESSAGE_ENCODER'):
+        message_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
+        tf_message_state = message_lstm.zero_state(tf_batch_size, tf.float32)
+        for lstm_step in range(MAX_MESSAGE_LENGTH):
+            with tf.variable_scope('ENCODER_STEP') as message_scope:
+                tf_message_input = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message[:, lstm_step], name='message_timestep_input')
+                tf_message_output, tf_message_state = message_lstm(tf_message_input, tf_message_state)
+
+    tf_latent_space_message = tf_message_output
+    tf_latent_space_middle = tf.nn.relu(tf.matmul(tf_latent_space_message, tf_response_mapping_w1) + tf_response_mapping_b1)
+    tf_latent_space_response = tf.nn.relu(tf.matmul(tf_latent_space_middle, tf_response_mapping_w2) + tf_response_mapping_b2)
+
+    with tf.variable_scope('RESPONSE_DECODER'):
+        response_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
+        tf_response_state = tf_message_state  # response_lstm.zero_state(tf_batch_size, tf.float32)
+        tf_response_output = tf.zeros([tf_batch_size, RNN_HIDDEN_DIM])
+        response_outputs = []
+        for lstm_step in range(MAX_MESSAGE_LENGTH):
+            with tf.variable_scope('DECODER_STEP') as response_scope:
+                tf_response_output, tf_response_state = response_lstm(tf_latent_space_response, tf_response_state)
+                response_outputs.append(tf_response_output)
+    tf_response_outputs = tf.stack(response_outputs, axis=1, name='response_outputs')
+
+elif SEQ2SEQ_IMPLEMENTATION == 'keras':
+    message_lstm = keras.layers.recurrent.LSTM(RNN_HIDDEN_DIM)
+    tf_message_output = message_lstm(tf_message_embs)
+    tf_message_output_tile = tf.tile(tf.reshape(tf_message_output, [-1, 1, RNN_HIDDEN_DIM]), [1, MAX_MESSAGE_LENGTH, 1])
+    response_lstm = keras.layers.recurrent.LSTM(RNN_HIDDEN_DIM, return_sequences=True)
+    tf_response_outputs = response_lstm(tf_message_output_tile)
+
+else:
+    print('No sequence to sequence implementation specified. Exiting...')
+    exit()
 
 
 with tf.variable_scope('OUTPUT_PREDICTION'):
+    print('Creating output layer...')
     W_v = tf.get_variable('output_weight',
                           shape=[RNN_HIDDEN_DIM, vocabulary_length],
                           initializer=tf.contrib.layers.xavier_initializer())

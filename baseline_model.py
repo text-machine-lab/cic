@@ -16,7 +16,7 @@ sdt.initialize_nlp()
 # CONTROL PANEL ########################################################################################################
 
 LEARNING_RATE = .001
-NUM_PARAGRAPHS = 50
+NUM_PARAGRAPHS = None
 RNN_HIDDEN_DIM = 200
 NUM_EXAMPLES_TO_PRINT = 40
 TRAIN_FRAC = 0.8
@@ -24,11 +24,11 @@ VALIDATE_PROPER_INPUTS = True
 RESTORE_FROM_SAVE = False
 TRAIN_MODEL_BEFORE_PREDICTION = True
 PREDICT_ON_TRAINING_EXAMPLES = False  # Predict on all training examples after training
-NUM_EPOCHS = 100
+NUM_EPOCHS = 50
 PRINT_TRAINING_EXAMPLES = True
 PRINT_VALIDATION_EXAMPLES = True
 PRINT_ACCURACY_EVERY_N_BATCHES = None
-BATCH_SIZE = 25
+BATCH_SIZE = 20
 STOP_TOKEN_REWARD = 2
 TURN_OFF_TF_LOGGING = True
 USE_SPACY_NOT_GLOVE = True  # Use Spacy GloVe embeddings or Twitter Glove embeddings
@@ -36,6 +36,8 @@ SHUFFLE_EXAMPLES = True
 SIMILARITY_LOSS_CONST = 0
 SAVE_VALIDATION_PREDICTIONS = True
 PRODUCE_OUTPUT_PREDICTIONS_FILE = False
+REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH = False  # Creates an unrealistic dataset with no cropping
+REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS = 0.0
 
 # SUBMISSION ###########################################################################################################
 
@@ -94,8 +96,51 @@ vocab_dict = sdt.generate_vocabulary_for_paragraphs(clean_paragraphs).token2id
 vocabulary = sdt.invert_dictionary(vocab_dict)  # becomes list of words essentially
 vocabulary_size = len(vocab_dict)
 print('Len vocabulary: %s' % vocabulary_size)
+
+print('Loading embeddings for each word in vocabulary')
+np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict, use_spacy_not_glove=USE_SPACY_NOT_GLOVE)
+num_embs = np_embeddings.shape[0]
+emb_size = np_embeddings.shape[1]
+num_empty_embs = 0
+print('Embedding shape: %s' % str(np_embeddings[0, :].shape))
+for i in range(num_embs):
+    if np.isclose(np_embeddings[i, :], np.zeros([emb_size])).all():
+        num_empty_embs += 1
+        # print(vocabulary[i])
+fraction_empty_embs = num_empty_embs / num_embs
+print('Fraction of empty embeddings in vocabulary: %s' % fraction_empty_embs)
+
 print('Flattening paragraphs into examples')
 examples = sdt.convert_paragraphs_to_flat_format(clean_paragraphs)
+
+if REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH:
+    examples = [example for example in examples
+                if len(example[0].split()) < config.MAX_QUESTION_WORDS
+                and len(example[1].split()) < config.MAX_ANSWER_WORDS
+                and len(example[2].split()) < config.MAX_CONTEXT_WORDS]
+
+dense_examples = []
+if REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS != 0.0:
+    for example in examples:
+        question = example[0].split()
+        context = example[1].split()
+        num_empty_question_embeddings = 0
+        for each_token in question:
+            token_index = vocab_dict[each_token]
+            if not np_embeddings[token_index, :].any():
+                num_empty_question_embeddings += 1
+        frac_empty_question_embeddings = num_empty_question_embeddings / len(question)
+        if frac_empty_question_embeddings < REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS:
+            num_empty_context_embeddings = 0
+            for each_token in context:
+                token_index = vocab_dict[each_token]
+                if not np_embeddings[token_index, :].any():
+                    num_empty_context_embeddings += 1
+            frac_empty_context_embeddings = num_empty_context_embeddings / len(context)
+            if frac_empty_context_embeddings < REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS:
+                dense_examples.append(example)
+    examples = dense_examples
+
 if SHUFFLE_EXAMPLES:
     random.shuffle(examples)
 print('Converting each example to numpy arrays')
@@ -186,18 +231,6 @@ for i in range(np_answers.shape[0]):
         num_empty_answers += 1
 print('Fraction of empty answer vectors (should be close to zero): %s' % (num_empty_answers / num_examples))
 
-print('Loading embeddings for each word in vocabulary')
-np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict, use_spacy_not_glove=USE_SPACY_NOT_GLOVE)
-num_embs = np_embeddings.shape[0]
-emb_size = np_embeddings.shape[1]
-num_empty_embs = 0
-print('Embedding shape: %s' % str(np_embeddings[0, :].shape))
-for i in range(num_embs):
-    if np.isclose(np_embeddings[i, :], np.zeros([emb_size])).all():
-        num_empty_embs += 1
-        # print(vocabulary[i])
-fraction_empty_embs = num_empty_embs / num_embs
-print('Fraction of empty embeddings in vocabulary: %s' % fraction_empty_embs)
 index_prob_size = config.MAX_CONTEXT_WORDS
 num_answers_in_context = 0
 for each_example in examples:
@@ -220,7 +253,7 @@ with tf.name_scope('PLACEHOLDERS'):
     tf_context_lengths = tf.placeholder(dtype=tf.int32, shape=(None), name='context_lengths')
     tf_answer_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_ANSWER_WORDS), name='answer_indices')
     tf_answer_masks = tf.placeholder(dtype=tf.float32, shape=(None, config.MAX_ANSWER_WORDS), name='answer_masks')
-    tf_batch_size = tf.placeholder(dtype=tf.int32, name='batch_size')
+    tf_batch_size = tf.placeholder(dtype=tf.int32, shape=(), name='batch_size')
 
 with tf.name_scope('INPUT_EMBEDDINGS'):
     tf_question_embs = tf.nn.embedding_lookup(tf_embeddings, tf_question_indices, name='question_embeddings')
@@ -262,7 +295,7 @@ with tf.variable_scope('MATCH_GRU'):
     Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM * 2]), Hr], axis=1, name='Hr_tilda')
 
 with tf.name_scope('OUTPUT'):
-    tf_log_probabilities, tf_selected_hidden_state = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
+    tf_log_probabilities, all_hidden_states = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
 
     tf_probabilities = tf.nn.softmax(tf_log_probabilities)
 
@@ -317,9 +350,24 @@ if VALIDATE_PROPER_INPUTS:
         sample_size = num_examples
     fd={tf_context_indices: np_contexts[:sample_size, :]}
     np_sample_context_embs = tf_context_embs.eval(fd)
-    num_filled_embs = np.count_nonzero(np_sample_context_embs)
-    frac_filled_embs = 1 - (num_filled_embs / np_sample_context_embs.size)
-    print('Fraction of words in context without embeddings: %s' % frac_filled_embs)
+    sample_examples = examples[:sample_size]
+
+    num_sample_context_empty_embs = 0
+    num_sample_context_embs = 0
+    assert len(sample_examples) == np_sample_context_embs.shape[0]
+    assert config.MAX_CONTEXT_WORDS == np_sample_context_embs.shape[1]
+    for example_index in range(np_sample_context_embs.shape[0]):
+        num_context_tokens = len(sample_examples[example_index][2].split())
+        for token_index in range(np_sample_context_embs.shape[1]):
+            if token_index < num_context_tokens:
+                num_sample_context_embs += 1
+                if not np_sample_context_embs[example_index, token_index, :].any():
+                    num_sample_context_empty_embs += 1
+    frac_empty_sample_embeddings = num_sample_context_empty_embs / num_sample_context_embs
+
+    # num_filled_embs = np.count_nonzero(np_sample_context_embs)
+    # frac_filled_embs = 1 - (num_filled_embs / np_sample_context_embs.size)
+    print('Fraction of words in context without embeddings: %s' % frac_empty_sample_embeddings)
     if USE_SPACY_NOT_GLOVE:
         for i in range(sample_size):
             context_tokens = contexts[i].split()
@@ -353,6 +401,8 @@ num_batches = int(num_examples * TRAIN_FRAC / BATCH_SIZE)
 num_train_examples = BATCH_SIZE * num_batches
 val_index_start = BATCH_SIZE * num_batches
 
+print('Number of training examples: %s' % num_train_examples)
+
 if RESTORE_FROM_SAVE:
     print('Restoring from save...')
     baseline_model_func.restore_model_from_save(config.BASELINE_MODEL_SAVE_DIR,
@@ -378,7 +428,7 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
             np_context_batch = np_contexts[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE, :]
             np_context_length_batch = np_context_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
             np_question_length_batch = np_question_lengths[i * BATCH_SIZE:i * BATCH_SIZE + BATCH_SIZE]
-            np_batch_predictions, np_loss, _, np_selected_hidden_state = sess.run([tf_predictions, tf_total_loss, train_op, tf_selected_hidden_state],
+            np_batch_predictions, np_loss, _, np_all_hidden_states = sess.run([tf_predictions, tf_total_loss, train_op, all_hidden_states],
                                                         feed_dict={tf_question_indices: np_question_batch,
                                                                    tf_question_lengths: np_question_length_batch,
                                                                    tf_answer_indices: np_answer_batch,
@@ -386,8 +436,11 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
                                                                    tf_context_indices: np_context_batch,
                                                                    tf_context_lengths: np_context_length_batch,
                                                                    tf_batch_size: BATCH_SIZE})
-            if epoch == 0 and i == 0:
-                print(np_selected_hidden_state[0, :])
+            if epoch == NUM_EPOCHS - 1 and i == num_batches - 1:
+                for j, hidden_state in enumerate(np_all_hidden_states):
+                    print('Timestep: %s' % j)
+                    print(hidden_state[0][0, :20])
+                    print(hidden_state[1][0, :20])
             accuracy, word_accuracy = sdt.compute_mask_accuracy(np_answer_batch,
                                                                 np_batch_predictions,
                                                                 np_answer_mask_batch)
