@@ -24,7 +24,9 @@ def load_cornell_movie_dialogues_dataset(movie_conversations_filename, max_conve
     """Load movie dialogues corpus and return a list of conversations. Each conversation is between
     two characters, and is represented as a list containing:
     [first_character_id, second_character_id, movie_id, message_ids] where ids are assigned per character
-    and per movie. message_ids is a list of ids for each message in the conversation. All ids are strings."""
+    and per movie. message_ids is a list of ids for each message in the conversation. All ids are strings.
+
+    Returns: list of conversations, and dictionary mapping each message id to the value 'None'"""
     movie_conversations_file = open(movie_conversations_filename, 'r')
     line_index = 0
     conversations = []
