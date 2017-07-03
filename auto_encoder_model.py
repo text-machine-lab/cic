@@ -3,7 +3,9 @@ back into the original sentence, with some reconstruction loss. Latent space is 
 be used in a GAN setting."""
 import chat_model_func
 import squad_dataset_tools as sdt
+import movie_dialogue_dataset_tools as mddt
 import baseline_model_func
+import auto_encoder_func
 import spacy
 import config
 import numpy as np
@@ -17,7 +19,7 @@ STOP_TOKEN = '<STOP>'
 DELIMITER = ' +++$+++ '
 RNN_HIDDEN_DIM = 1000
 LEARNED_EMBEDDING_SIZE = 100
-LEARNING_RATE = .0005
+LEARNING_RATE = .0004
 RESTORE_FROM_SAVE = True
 BATCH_SIZE = 20
 TRAINING_FRACTION = 0.8
@@ -28,27 +30,10 @@ print('Loading nlp...')
 nlp = spacy.load('en')
 
 print('Loading messages...')
-movie_lines_file = open(config.CORNELL_MOVIE_LINES_FILE, 'rb')
-messages = []
-line_index = 0
-for message_line in movie_lines_file:
-    if MAX_NUMBER_OF_MESSAGES is None or line_index < MAX_NUMBER_OF_MESSAGES:
-        try:
-            message_data = message_line.decode('utf-8').split(DELIMITER)
-            message_id = message_data[0]
-            character_id = message_data[1]
-            movie_id = message_data[2]
-            character_name = message_data[3]
-            message = message_data[4][:-1]
-            tk_message = nlp.tokenizer(message.lower())
-            tk_tokens = [str(token) for token in tk_message if str(token) != ' '] + [STOP_TOKEN]
-            if len(tk_tokens) <= MAX_MESSAGE_LENGTH:
-                messages.append(tk_tokens)
-                line_index += 1
-        except UnicodeDecodeError:
-            pass
-    else:
-        break
+messages = mddt.load_messages_from_cornell_movie_lines(config.CORNELL_MOVIE_LINES_FILE, nlp,
+                                                       max_number_of_messages=MAX_NUMBER_OF_MESSAGES,
+                                                       max_message_length=MAX_MESSAGE_LENGTH,
+                                                       stop_token=STOP_TOKEN)
 
 np_message_lengths = np.array([len(message) for message in messages])
 print('Average message length: %s' % np.mean(np_message_lengths))
@@ -93,57 +78,17 @@ for i in range(len(messages)):
         assert each_message == message_reconstruct[i]
 
 print('Building model...')
+auto_encoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
+                                             MAX_MESSAGE_LENGTH, encoder=True, decoder=True)
+
 tf_message = tf.placeholder(dtype=tf.int32, shape=[None, MAX_MESSAGE_LENGTH], name='input_message')
 with tf.name_scope('batch_size'):
     tf_batch_size = tf.shape(tf_message)[0]
-tf_learned_embeddings = tf.get_variable('learned_embeddings',
-                                        shape=[vocabulary_length, LEARNED_EMBEDDING_SIZE],
-                                        initializer=tf.contrib.layers.xavier_initializer())
 
-tf_message_embs = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message, name='message_embeddings')
-
-with tf.variable_scope('MESSAGE_ENCODER'):
-    message_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
-    tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs, dtype=tf.float32)
-
-tf_message_final_output_tile = tf.tile(tf.reshape(tf_message_outputs[:, -1, :], [-1, 1, RNN_HIDDEN_DIM]),
-                                       [1, MAX_MESSAGE_LENGTH, 1])
-
-with tf.variable_scope('MESSAGE_DECODER'):
-    response_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
-tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_lstm, tf_message_final_output_tile,
-                                                           dtype=tf.float32,
-                                                           initial_state=tf_message_state)
-
-with tf.variable_scope('OUTPUT_PREDICTION'):
-    print('Creating output layer...')
-    output_weight = tf.get_variable('output_weight',
-                                    shape=[RNN_HIDDEN_DIM, vocabulary_length],
-                                    initializer=tf.contrib.layers.xavier_initializer())
-    output_bias = tf.get_variable('output_bias',
-                                  shape=[vocabulary_length],
-                                  initializer=tf.contrib.layers.xavier_initializer())
-    with tf.name_scope('tf_message_log_probabilities'):
-        tf_response_outputs_reshape = tf.reshape(tf_response_outputs, [-1, RNN_HIDDEN_DIM])
-        tf_message_log_probabilities = tf.reshape(tf.matmul(tf_response_outputs_reshape, output_weight) + output_bias,
-                                                  [-1, MAX_MESSAGE_LENGTH, vocabulary_length])
-
-    tf_message_probabilities = tf.nn.softmax(tf_message_log_probabilities, name='message_probabilities')
-
-    tf_message_prediction = tf.argmax(tf_message_probabilities, axis=2)
-    print('tf_message_prediction shape: %s' % str(tf_message_prediction.get_shape()))
-
-with tf.variable_scope('LOSS'):
-    tf_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_message_log_probabilities,
-                                                               labels=tf_message,
-                                                               name='word_losses')
-    with tf.name_scope('total_loss'):
-        tf_total_loss = tf.reduce_sum(tf_losses) / tf.cast(tf_batch_size, tf.float32)
-
+tf_message_output = auto_encoder.build_encoder(tf_message)
+tf_message_prediction, tf_message_log_prob, tf_message_prob = auto_encoder.build_decoder(tf_message_output)
+tf_total_loss = auto_encoder.build_trainer(tf_message_log_prob, tf_message)
 baseline_model_func.create_tensorboard_visualization('chat')
-
-with tf.name_scope("SAVER"):
-    saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
 
 train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(tf_total_loss)
 init = tf.global_variables_initializer()
@@ -152,7 +97,11 @@ sess.run(init)
 
 if RESTORE_FROM_SAVE:
     print('Restoring from save...')
-    baseline_model_func.restore_model_from_save(config.AUTO_ENCODER_MODEL_SAVE_DIR, var_list=tf.trainable_variables(), sess=sess)
+    auto_encoder.load_encoder_from_save(config.AUTO_ENCODER_MODEL_SAVE_DIR, sess)
+    auto_encoder.load_decoder_from_save(config.AUTO_ENCODER_MODEL_SAVE_DIR, sess)
+
+with tf.name_scope("SAVER"):
+    saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
 
 num_train_messages = int(num_messages * TRAINING_FRACTION)
 

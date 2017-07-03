@@ -41,7 +41,7 @@ conversations, id_to_message = mddt.load_cornell_movie_dialogues_dataset(config.
 print('Number of valid conversations: %s' % len(conversations))
 
 print('Finding messages...')
-mddt.load_messages_from_cornell_movie_lines(id_to_message, config.CORNELL_MOVIE_LINES_FILE, STOP_TOKEN, nlp)
+mddt.load_messages_from_cornell_movie_lines_by_id(id_to_message, config.CORNELL_MOVIE_LINES_FILE, STOP_TOKEN, nlp)
 
 num_messages = len(id_to_message)
 print('Number of messages: %s' % num_messages)

@@ -20,6 +20,34 @@ def construct_examples_from_conversations_and_messages(conversations, id_to_mess
     return examples
 
 
+def load_messages_from_cornell_movie_lines(movie_lines_filename, nlp, max_number_of_messages=None,
+                                           max_message_length=None, stop_token=None):
+    movie_lines_file = open(movie_lines_filename, 'rb')
+    messages = []
+    line_index = 0
+    for message_line in movie_lines_file:
+        if max_number_of_messages is None or line_index < max_number_of_messages:
+            try:
+                message_data = message_line.decode('utf-8').split(DELIMITER)
+                message_id = message_data[0]
+                character_id = message_data[1]
+                movie_id = message_data[2]
+                character_name = message_data[3]
+                message = message_data[4][:-1]
+                tk_message = nlp.tokenizer(message.lower())
+                tk_tokens = [str(token) for token in tk_message if str(token) != ' ']
+                if stop_token is not None:
+                    tk_tokens += [stop_token]
+                if max_message_length is None or len(tk_tokens) <= max_message_length:
+                    messages.append(tk_tokens)
+                    line_index += 1
+            except UnicodeDecodeError:
+                pass
+        else:
+            break
+    return messages
+
+
 def load_cornell_movie_dialogues_dataset(movie_conversations_filename, max_conversations_to_load=None):
     """Load movie dialogues corpus and return a list of conversations. Each conversation is between
     two characters, and is represented as a list containing:
@@ -45,7 +73,7 @@ def load_cornell_movie_dialogues_dataset(movie_conversations_filename, max_conve
     return conversations, id_to_message
 
 
-def load_messages_from_cornell_movie_lines(id_to_message, movie_lines_filename, stop_token, nlp):
+def load_messages_from_cornell_movie_lines_by_id(id_to_message, movie_lines_filename, stop_token, nlp):
     """Given a mapping from message ids to none (id_to_message[3] == None), find each message id
     in the file movie_lines_filename and store in id_to_message in place of None. Add a stop_token character at the
     end of each message. Pre-process each message by tokenizing with nlp, a spacy tokenizer. Returns nothing."""
