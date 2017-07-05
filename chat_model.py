@@ -18,7 +18,8 @@ NUM_CONVERSATIONS = None
 NUM_EXAMPLES_TO_PRINT = 20
 MAX_MESSAGE_LENGTH = 10
 LEARNED_EMBEDDING_SIZE = 100
-RNN_HIDDEN_DIM = 1000
+KEEP_PROB = 0.6
+RNN_HIDDEN_DIM = 1500
 TRAIN_FRACTION = 0.8
 BATCH_SIZE = 20
 NUM_EPOCHS = 200
@@ -105,6 +106,7 @@ print('Constructing model...')
 tf_message = tf.placeholder(dtype=tf.int32, shape=[None, MAX_MESSAGE_LENGTH], name='input_message')
 tf_response = tf.placeholder(dtype=tf.int32, shape=[None, MAX_MESSAGE_LENGTH], name='output_response')
 tf_response_mask = tf.not_equal(tf_response, tf.constant(0), name='response_mask')
+tf_keep_prob = tf.placeholder_with_default(1.0, (), name='keep_prob')
 with tf.name_scope('batch_size'):
     tf_batch_size = tf.shape(tf_message)[0]
 print('tf_response_mask shape: %s' % str(tf_response_mask.get_shape()))
@@ -114,6 +116,8 @@ tf_learned_embeddings = tf.get_variable('learned_embeddings',
                                         initializer=tf.contrib.layers.xavier_initializer())
 
 tf_message_embs = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message, name='message_embeddings')
+
+tf_message_embs = tf.nn.dropout(tf_message_embs, tf_keep_prob, name='message_embs_w_dropout')
 
 print('Creating sequence-to-sequence...')
 
@@ -138,7 +142,8 @@ if SEQ2SEQ_IMPLEMENTATION == 'dynamic_rnn':
         tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs, dtype=tf.float32)
 
     tf_latent_space_message = tf_message_outputs[:, -1, :]
-    tf_latent_space_middle = tf.nn.relu(tf.matmul(tf_latent_space_message, tf_response_mapping_w1) + tf_response_mapping_b1)
+    tf_latent_space_message_dropout = tf.nn.dropout(tf_latent_space_message, tf_keep_prob)
+    tf_latent_space_middle = tf.nn.relu(tf.matmul(tf_latent_space_message_dropout, tf_response_mapping_w1) + tf_response_mapping_b1)
     tf_latent_space_response = tf.nn.relu(tf.matmul(tf_latent_space_middle, tf_response_mapping_w2) + tf_response_mapping_b2)
 
     tf_message_final_output_tile = tf.tile(tf.reshape(tf_latent_space_response, [-1, 1, RNN_HIDDEN_DIM]), [1, MAX_MESSAGE_LENGTH, 1])
@@ -158,7 +163,8 @@ elif SEQ2SEQ_IMPLEMENTATION == 'homemade':
                 tf_message_output, tf_message_state = message_lstm(tf_message_input, tf_message_state)
 
     tf_latent_space_message = tf_message_output
-    tf_latent_space_middle = tf.nn.relu(tf.matmul(tf_latent_space_message, tf_response_mapping_w1) + tf_response_mapping_b1)
+    tf_latent_space_message_dropout = tf.nn.dropout(tf_latent_space_message, tf_keep_prob)
+    tf_latent_space_middle = tf.nn.relu(tf.matmul(tf_latent_space_message_dropout, tf_response_mapping_w1) + tf_response_mapping_b1)
     tf_latent_space_response = tf.nn.relu(tf.matmul(tf_latent_space_middle, tf_response_mapping_w2) + tf_response_mapping_b2)
 
     with tf.variable_scope('RESPONSE_DECODER'):
@@ -171,13 +177,6 @@ elif SEQ2SEQ_IMPLEMENTATION == 'homemade':
                 tf_response_output, tf_response_state = response_lstm(tf_latent_space_response, tf_response_state)
                 response_outputs.append(tf_response_output)
     tf_response_outputs = tf.stack(response_outputs, axis=1, name='response_outputs')
-#
-# elif SEQ2SEQ_IMPLEMENTATION == 'keras':
-#     message_lstm = keras.layers.recurrent.LSTM(RNN_HIDDEN_DIM)
-#     tf_message_output = message_lstm(tf_message_embs)
-#     tf_message_output_tile = tf.tile(tf.reshape(tf_message_output, [-1, 1, RNN_HIDDEN_DIM]), [1, MAX_MESSAGE_LENGTH, 1])
-#     response_lstm = keras.layers.recurrent.LSTM(RNN_HIDDEN_DIM, return_sequences=True)
-#     tf_response_outputs = response_lstm(tf_message_output_tile)
 
 else:
     print('No sequence to sequence implementation specified. Exiting...')
@@ -245,7 +244,8 @@ if num_train_examples > 0 and NUM_EPOCHS > 0:
 
             batch_loss, batch_response_predictions, _, batch_mask = sess.run([tf_total_loss, tf_response_prediction, train_op, tf_response_mask],
                                                                               feed_dict={tf_message: np_batch_message,
-                                                                                         tf_response: np_batch_response})
+                                                                                         tf_response: np_batch_response,
+                                                                                         tf_keep_prob: KEEP_PROB})
             all_batch_losses.append(batch_loss)
             all_batch_predictions.append(batch_response_predictions)
         print('Epoch loss: %s' % np.mean(all_batch_losses))

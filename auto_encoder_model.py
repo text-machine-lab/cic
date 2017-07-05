@@ -10,21 +10,27 @@ import spacy
 import config
 import numpy as np
 import gensim
-import tensorflow as tf
 import pickle
+import tensorflow as tf
+
+# CONTROL PANEL ########################################################################################################
 
 MAX_MESSAGE_LENGTH = 10
 MAX_NUMBER_OF_MESSAGES = None
 STOP_TOKEN = '<STOP>'
 DELIMITER = ' +++$+++ '
-RNN_HIDDEN_DIM = 1000
+RNN_HIDDEN_DIM = 1500
 LEARNED_EMBEDDING_SIZE = 100
-LEARNING_RATE = .0004
+LEARNING_RATE = .0008
 RESTORE_FROM_SAVE = True
 BATCH_SIZE = 20
 TRAINING_FRACTION = 0.8
-NUM_EPOCHS = 0
+NUM_EPOCHS = 50
 NUM_EXAMPLES_TO_PRINT = 20
+VALIDATE_ENCODER_AND_DECODER = False
+SAVE_TENSORBOARD_VISUALIZATION = False
+
+# PRE-PROCESSING #######################################################################################################
 
 print('Loading nlp...')
 nlp = spacy.load('en')
@@ -77,48 +83,24 @@ for i in range(len(messages)):
     if len(messages[i]) <= MAX_MESSAGE_LENGTH:
         assert each_message == message_reconstruct[i]
 
+# BUILD GRAPH ##########################################################################################################
+
 print('Building model...')
-auto_encoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
-                                             MAX_MESSAGE_LENGTH, encoder=True, decoder=True)
+with tf.Graph().as_default() as autoencoder_graph:
+    auto_encoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
+                                                 MAX_MESSAGE_LENGTH, encoder=True, decoder=True,
+                                                 save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                                 load_from_save=RESTORE_FROM_SAVE,
+                                                 learning_rate=LEARNING_RATE)
+    if SAVE_TENSORBOARD_VISUALIZATION:
+        baseline_model_func.create_tensorboard_visualization('chat')
 
-tf_message = tf.placeholder(dtype=tf.int32, shape=[None, MAX_MESSAGE_LENGTH], name='input_message')
-with tf.name_scope('batch_size'):
-    tf_batch_size = tf.shape(tf_message)[0]
-
-tf_message_output = auto_encoder.build_encoder(tf_message)
-tf_message_prediction, tf_message_log_prob, tf_message_prob = auto_encoder.build_decoder(tf_message_output)
-tf_total_loss = auto_encoder.build_trainer(tf_message_log_prob, tf_message)
-baseline_model_func.create_tensorboard_visualization('chat')
-
-train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(tf_total_loss)
-init = tf.global_variables_initializer()
-sess = tf.InteractiveSession()
-sess.run(init)
-
-if RESTORE_FROM_SAVE:
-    print('Restoring from save...')
-    auto_encoder.load_encoder_from_save(config.AUTO_ENCODER_MODEL_SAVE_DIR, sess)
-    auto_encoder.load_decoder_from_save(config.AUTO_ENCODER_MODEL_SAVE_DIR, sess)
-
-with tf.name_scope("SAVER"):
-    saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
+# TRAIN ################################################################################################################
 
 num_train_messages = int(num_messages * TRAINING_FRACTION)
-
 if NUM_EPOCHS > 0:
     np_train_messages = np_messages[:num_train_messages, :]
-
-    for epoch in range(NUM_EPOCHS):
-        train_batch_gen = chat_model_func.BatchGenerator(np_train_messages, BATCH_SIZE)
-        all_train_message_batches = []
-        for batch_index, np_message_batch in enumerate(train_batch_gen.generate_batches()):
-            _, batch_loss, np_batch_message_reconstruct = sess.run([train_op, tf_total_loss, tf_message_prediction],
-                                                                   feed_dict={tf_message: np_message_batch})
-            all_train_message_batches.append(np_batch_message_reconstruct)
-            if batch_index % 200 == 0:
-                print('Batch loss: %s' % batch_loss)
-        saver.save(sess, config.AUTO_ENCODER_MODEL_SAVE_DIR, global_step=epoch)
-    np_train_message_reconstruct = np.concatenate(all_train_message_batches, axis=0)
+    np_train_message_reconstruct = auto_encoder.train(np_train_messages, NUM_EPOCHS, BATCH_SIZE)
 
     print('Printing train examples...')
     train_message_reconstruct = sdt.convert_numpy_array_to_strings(np_train_message_reconstruct, vocabulary,
@@ -127,15 +109,12 @@ if NUM_EPOCHS > 0:
     for index, message_reconstruct in enumerate(train_message_reconstruct[:NUM_EXAMPLES_TO_PRINT]):
         print(message_reconstruct, '\t\t\t|||', ' '.join(messages[index]))
 
+# PREDICT ##############################################################################################################
+
 np_val_messages = np_messages[num_train_messages:, :]
 num_val_messages = np_val_messages.shape[0]
 
-all_val_message_batches = []
-val_batch_gen = chat_model_func.BatchGenerator(np_val_messages, BATCH_SIZE)
-for batch_index, np_message_batch in enumerate(val_batch_gen.generate_batches()):
-    np_val_batch_reconstruct = sess.run(tf_message_prediction, feed_dict={tf_message: np_message_batch})
-    all_val_message_batches.append(np_val_batch_reconstruct)
-np_val_message_reconstruct = np.concatenate(all_val_message_batches, axis=0)
+np_val_message_reconstruct = auto_encoder.reconstruct(np_val_messages, BATCH_SIZE)
 
 print('Printing validation examples...')
 val_message_reconstruct = sdt.convert_numpy_array_to_strings(np_val_message_reconstruct, vocabulary,
@@ -152,17 +131,65 @@ for index, message_reconstruct in enumerate(val_message_reconstruct[:NUM_EXAMPLE
 validation_accuracy = num_validation_examples_correct / num_val_messages
 print('Validation EM accuracy: %s' % validation_accuracy)
 
+with tf.Graph().as_default() as encoder_graph:
+    encoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
+                                            MAX_MESSAGE_LENGTH, encoder=True, decoder=False,
+                                            save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                            load_from_save=True,
+                                            learning_rate=LEARNING_RATE)
+
+with tf.Graph().as_default() as decoder_graph:
+    decoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
+                                            MAX_MESSAGE_LENGTH, encoder=False, decoder=True,
+                                            save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                            load_from_save=True,
+                                            learning_rate=LEARNING_RATE)
+
+if VALIDATE_ENCODER_AND_DECODER:
+    np_val_latent = encoder.encode(np_val_messages, BATCH_SIZE)
+    np_val_decoder_reconstruct = decoder.decode(np_val_latent, BATCH_SIZE)
+
+    assert np.isclose(np_val_message_reconstruct, np_val_decoder_reconstruct).all()
+
+# INTERACT #############################################################################################################
+
+
+def convert_string_to_numpy(msg):
+    tk_message = nlp.tokenizer(msg.lower())
+    tk_tokens = [str(token) for token in tk_message if str(token) != ' ' and str(token) in vocab_dict] + [STOP_TOKEN]
+    np_message = chat_model_func.construct_numpy_from_messages([tk_tokens], vocab_dict, MAX_MESSAGE_LENGTH)
+    return np_message
+
 print('Test the autoencoder!')
 print('Would you like to test individual messages, or test the space? (individual/space/neither)')
 choice = input()
 if choice == 'individual':
     while True:
         your_message = input('Message: ')
-        tk_message = nlp.tokenizer(your_message.lower())
-        tk_tokens = [str(token) for token in tk_message if str(token) != ' ' and str(token) in vocab_dict] + [STOP_TOKEN]
-        np_your_message = chat_model_func.construct_numpy_from_messages([tk_tokens], vocab_dict, MAX_MESSAGE_LENGTH)
-        np_your_message_reconstruct = sess.run(tf_message_prediction, feed_dict={tf_message: np_your_message})
+        np_your_message = convert_string_to_numpy(your_message)
+        np_your_message_reconstruct = auto_encoder.reconstruct(np_your_message, 1)
         your_message_reconstruct = sdt.convert_numpy_array_to_strings(np_your_message_reconstruct, vocabulary,
                                                                       stop_token=STOP_TOKEN,
                                                                       keep_stop_token=True)
         print('Reconstruction: %s' % your_message_reconstruct[0])
+
+if choice == 'space':
+    while True:
+        num_increments = int(input('Number of increments: '))
+        first_message = input('First message: ')
+        second_message = input('Second message: ')
+        np_first_message = convert_string_to_numpy(first_message)
+        np_second_message = convert_string_to_numpy(second_message)
+        np_first_latent = encoder.encode(np_first_message, BATCH_SIZE)
+        np_second_latent = encoder.encode(np_second_message, BATCH_SIZE)
+        np_increment = (np_first_latent - np_second_latent) / num_increments
+        for i in range(num_increments + 1):
+            np_new_latent = np_second_latent + i * np_increment
+            np_new_message = decoder.decode(np_new_latent, BATCH_SIZE)
+            new_message = sdt.convert_numpy_array_to_strings(np_new_message, vocabulary,
+                                                             stop_token=STOP_TOKEN,
+                                                             keep_stop_token=True)[0]
+            print('Increment %s: %s' % (i, new_message))
+
+
+
