@@ -21,14 +21,14 @@ MAX_MESSAGE_LENGTH = 10
 MAX_NUMBER_OF_MESSAGES = None
 STOP_TOKEN = '<STOP>'
 DELIMITER = ' +++$+++ '
-RNN_HIDDEN_DIM = 1500
+RNN_HIDDEN_DIM = 600
 LEARNED_EMBEDDING_SIZE = 100
 LEARNING_RATE = .0008
-KEEP_PROB = 0.4
-RESTORE_FROM_SAVE = True
+KEEP_PROB = 0.5
+RESTORE_FROM_SAVE = False
 BATCH_SIZE = 20
-TRAINING_FRACTION = 0.8
-NUM_EPOCHS = 0
+TRAINING_FRACTION = 0.9
+NUM_EPOCHS = 100
 NUM_EXAMPLES_TO_PRINT = 20
 VALIDATE_ENCODER_AND_DECODER = False
 SAVE_TENSORBOARD_VISUALIZATION = False
@@ -116,8 +116,15 @@ if NUM_EPOCHS > 0:
     train_message_reconstruct = sdt.convert_numpy_array_to_strings(np_train_message_reconstruct, vocabulary,
                                                                    stop_token=STOP_TOKEN,
                                                                    keep_stop_token=True)
-    for index, message_reconstruct in enumerate(train_message_reconstruct[:NUM_EXAMPLES_TO_PRINT]):
-        print(message_reconstruct, '\t\t\t|||', ' '.join(messages[index]))
+    num_train_examples_correct = 0
+    for index, message_reconstruct in enumerate(train_message_reconstruct):
+        original_message = ' '.join(messages[index])
+        if index < NUM_EXAMPLES_TO_PRINT:
+            print(message_reconstruct, '\t\t\t|||', original_message)
+        if message_reconstruct == original_message:
+            num_train_examples_correct += 1
+
+    print('Training EM Accuracy: %s' % (num_train_examples_correct / num_train_messages))
 
 # PREDICT ##############################################################################################################
 

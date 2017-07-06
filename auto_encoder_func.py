@@ -28,6 +28,10 @@ class AutoEncoder:
         self.tf_message = tf.placeholder(dtype=tf.int32, shape=[None, self.max_message_size], name='input_message')
         self.tf_latent = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
         self.tf_keep_prob = tf.placeholder_with_default(1.0, (), name='keep_prob')
+        with tf.variable_scope('LEARNED_EMBEDDINGS'):
+            self.tf_learned_embeddings = tf.get_variable('learned_embeddings',
+                                                         shape=[self.vocab_size, self.word_embedding_size],
+                                                         initializer=tf.contrib.layers.xavier_initializer())
         if self.encoder:
             self.tf_latent_message = self.build_encoder(self.tf_message, self.tf_keep_prob)
         if self.decoder:
@@ -47,10 +51,12 @@ class AutoEncoder:
         self.sess = tf.InteractiveSession()
         self.sess.run(init)
         if load_from_save:
+            print('Loading from save...')
+            self.load_scope_from_save(save_dir, self.sess, 'LEARNED_EMBEDDINGS')
             if self.encoder:
-                self.load_encoder_from_save(save_dir, self.sess)
+                self.load_scope_from_save(save_dir, self.sess, 'MESSAGE_ENCODER')
             if self.decoder:
-                self.load_decoder_from_save(save_dir, self.sess)
+                self.load_scope_from_save(save_dir, self.sess, 'MESSAGE_DECODER')
 
     def encode(self, np_message, batch_size=None):
         """Converts sentences encoded as numpy arrays to points in a latent space."""
@@ -116,11 +122,8 @@ class AutoEncoder:
     def build_encoder(self, tf_message, tf_keep_prob):
         """Build encoder portion of autoencoder in Tensorflow."""
         with tf.variable_scope('MESSAGE_ENCODER'):
-            tf_learned_embeddings = tf.get_variable('learned_embeddings',
-                                                    shape=[self.vocab_size, self.word_embedding_size],
-                                                    initializer=tf.contrib.layers.xavier_initializer())
 
-            tf_message_embs = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message, name='message_embeddings')
+            tf_message_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, tf_message, name='message_embeddings')
             tf_message_embs_dropout = tf.nn.dropout(tf_message_embs, tf_keep_prob)
 
             message_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
@@ -139,16 +142,17 @@ class AutoEncoder:
             tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_lstm, tf_message_final_output_tile,
                                                                        dtype=tf.float32)
             output_weight = tf.get_variable('output_weight',
-                                            shape=[self.rnn_size, self.vocab_size],
+                                            shape=[self.rnn_size, self.word_embedding_size],
                                             initializer=tf.contrib.layers.xavier_initializer())
             output_bias = tf.get_variable('output_bias',
-                                          shape=[self.vocab_size],
+                                          shape=[self.word_embedding_size],
                                           initializer=tf.contrib.layers.xavier_initializer())
             with tf.name_scope('tf_message_log_probabilities'):
                 tf_response_outputs_reshape = tf.reshape(tf_response_outputs, [-1, self.rnn_size])
-                tf_message_log_prob = tf.reshape(
-                    tf.matmul(tf_response_outputs_reshape, output_weight) + output_bias,
-                    [-1, self.max_message_size, self.vocab_size])
+                tf_response_output_embs = tf.matmul(tf_response_outputs_reshape, output_weight) + output_bias
+                print(tf_response_output_embs.get_shape())
+                tf_flat_message_log_prob = tf.matmul(tf_response_output_embs, self.tf_learned_embeddings, transpose_b=True)
+                tf_message_log_prob = tf.reshape(tf_flat_message_log_prob, [-1, self.max_message_size, self.vocab_size])
 
             tf_message_prob = tf.nn.softmax(tf_message_log_prob, name='message_probabilities')
 
@@ -168,20 +172,13 @@ class AutoEncoder:
         train_op = tf.train.AdamOptimizer(learning_rate).minimize(tf_total_loss)
         return train_op, tf_total_loss
 
-    def load_encoder_from_save(self, save_dir, sess):
+    def load_scope_from_save(self, save_dir, sess, scope):
         """Load the encoder model variables from checkpoint in save_dir.
         Store them in session sess."""
-        encoder_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='MESSAGE_ENCODER')
-        assert len(encoder_vars) > 0
+        vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
+        assert len(vars) > 0
         baseline_model_func.restore_model_from_save(save_dir,
-                                                    var_list=encoder_vars, sess=sess)
-
-    def load_decoder_from_save(self, save_dir, sess):
-        """Load the decoder model variables from checkpoint in save_dir. Store them in session sess."""
-        decoder_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='MESSAGE_DECODER')
-        assert len(decoder_vars) > 0
-        baseline_model_func.restore_model_from_save(save_dir,
-                                                    var_list=decoder_vars, sess=sess)
+                                                    var_list=vars, sess=sess)
 
     def __call__(self, np_input):
         pass
