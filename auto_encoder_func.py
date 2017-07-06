@@ -27,8 +27,9 @@ class AutoEncoder:
 
         self.tf_message = tf.placeholder(dtype=tf.int32, shape=[None, self.max_message_size], name='input_message')
         self.tf_latent = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
+        self.tf_keep_prob = tf.placeholder_with_default(1.0, (), name='keep_prob')
         if self.encoder:
-            self.tf_latent_message = self.build_encoder(self.tf_message)
+            self.tf_latent_message = self.build_encoder(self.tf_message, self.tf_keep_prob)
         if self.decoder:
             if self.encoder:
                 decoder_input = self.tf_latent_message
@@ -91,23 +92,28 @@ class AutoEncoder:
         np_val_message_reconstruct = np.concatenate(all_val_message_batches, axis=0)
         return np_val_message_reconstruct
 
-    def train(self, np_input, num_epochs, batch_size):
+    def train(self, np_input, num_epochs, batch_size, keep_prob=1.0):
         """Trains on examples from np_input for num_epoch epochs,
         by dividing the data into batches of size batch_size."""
+        examples_per_print = 200
         for epoch in range(num_epochs):
             train_batch_gen = chat_model_func.BatchGenerator(np_input, batch_size)
             all_train_message_batches = []
+            per_print_batch_losses = []
             for batch_index, np_message_batch in enumerate(train_batch_gen.generate_batches()):
                 _, batch_loss, np_batch_message_reconstruct = self.sess.run([self.train_op, self.tf_total_loss, self.tf_message_prediction],
-                                                                       feed_dict={self.tf_message: np_message_batch})
+                                                                       feed_dict={self.tf_message: np_message_batch,
+                                                                                  self.tf_keep_prob: keep_prob})
                 all_train_message_batches.append(np_batch_message_reconstruct)
-                if batch_index % 200 == 0:
-                    print('Batch loss: %s' % batch_loss)
+                per_print_batch_losses.append(batch_loss)
+                if batch_index % examples_per_print == 0:
+                    print('Batch loss: %s' % np.mean(per_print_batch_losses))
+                    per_print_batch_losses = []
             self.saver.save(self.sess, self.save_dir, global_step=epoch)
         np_train_message_reconstruct = np.concatenate(all_train_message_batches, axis=0)
         return np_train_message_reconstruct
 
-    def build_encoder(self, tf_message):
+    def build_encoder(self, tf_message, tf_keep_prob):
         """Build encoder portion of autoencoder in Tensorflow."""
         with tf.variable_scope('MESSAGE_ENCODER'):
             tf_learned_embeddings = tf.get_variable('learned_embeddings',
@@ -115,11 +121,13 @@ class AutoEncoder:
                                                     initializer=tf.contrib.layers.xavier_initializer())
 
             tf_message_embs = tf.nn.embedding_lookup(tf_learned_embeddings, tf_message, name='message_embeddings')
+            tf_message_embs_dropout = tf.nn.dropout(tf_message_embs, tf_keep_prob)
 
             message_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
-            tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs, dtype=tf.float32)
+            tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs_dropout, dtype=tf.float32)
             tf_last_output = tf_message_outputs[:, -1, :]
-        return tf_last_output
+            tf_last_output_dropout = tf.nn.dropout(tf_last_output, tf_keep_prob)
+        return tf_last_output_dropout
 
     def build_decoder(self, tf_decoder_input):
         """Build decoder portion of autoencoder in Tensorflow."""

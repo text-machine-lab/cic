@@ -12,6 +12,8 @@ import numpy as np
 import gensim
 import pickle
 import tensorflow as tf
+import sys
+import os
 
 # CONTROL PANEL ########################################################################################################
 
@@ -22,15 +24,23 @@ DELIMITER = ' +++$+++ '
 RNN_HIDDEN_DIM = 1500
 LEARNED_EMBEDDING_SIZE = 100
 LEARNING_RATE = .0008
+KEEP_PROB = 0.4
 RESTORE_FROM_SAVE = True
 BATCH_SIZE = 20
 TRAINING_FRACTION = 0.8
-NUM_EPOCHS = 50
+NUM_EPOCHS = 0
 NUM_EXAMPLES_TO_PRINT = 20
 VALIDATE_ENCODER_AND_DECODER = False
 SAVE_TENSORBOARD_VISUALIZATION = False
 
 # PRE-PROCESSING #######################################################################################################
+
+# First cmd-line argument is save path for model checkpoint
+if len(sys.argv) >= 2:
+    config.AUTO_ENCODER_MODEL_SAVE_DIR = sys.argv[1]
+
+if not os.path.exists(config.AUTO_ENCODER_MODEL_SAVE_DIR):
+    os.makedirs(config.AUTO_ENCODER_MODEL_SAVE_DIR)
 
 print('Loading nlp...')
 nlp = spacy.load('en')
@@ -100,7 +110,7 @@ with tf.Graph().as_default() as autoencoder_graph:
 num_train_messages = int(num_messages * TRAINING_FRACTION)
 if NUM_EPOCHS > 0:
     np_train_messages = np_messages[:num_train_messages, :]
-    np_train_message_reconstruct = auto_encoder.train(np_train_messages, NUM_EPOCHS, BATCH_SIZE)
+    np_train_message_reconstruct = auto_encoder.train(np_train_messages, NUM_EPOCHS, BATCH_SIZE, keep_prob=KEEP_PROB)
 
     print('Printing train examples...')
     train_message_reconstruct = sdt.convert_numpy_array_to_strings(np_train_message_reconstruct, vocabulary,
@@ -122,11 +132,16 @@ val_message_reconstruct = sdt.convert_numpy_array_to_strings(np_val_message_reco
                                                              keep_stop_token=True)
 
 num_validation_examples_correct = 0
-for index, message_reconstruct in enumerate(val_message_reconstruct[:NUM_EXAMPLES_TO_PRINT]):
+for index, message_reconstruct in enumerate(val_message_reconstruct):
     original_message = ' '.join(messages[num_train_messages + index])
-    print(message_reconstruct, '\t\t\t|||', original_message)
+    if index < NUM_EXAMPLES_TO_PRINT:
+        print(message_reconstruct, '\t\t\t|||', original_message)
     if original_message == message_reconstruct:
         num_validation_examples_correct += 1
+    else:
+        print(original_message)
+        print(message_reconstruct)
+        print()
 
 validation_accuracy = num_validation_examples_correct / num_val_messages
 print('Validation EM accuracy: %s' % validation_accuracy)
@@ -147,8 +162,10 @@ with tf.Graph().as_default() as decoder_graph:
 
 if VALIDATE_ENCODER_AND_DECODER:
     np_val_latent = encoder.encode(np_val_messages, BATCH_SIZE)
+    val_latent_avg_magnitude = np.mean(np.abs(np_val_latent))
+    val_latent_std = np.std(np_val_latent)
     np_val_decoder_reconstruct = decoder.decode(np_val_latent, BATCH_SIZE)
-
+    print('Average magnitude of latent space dimension: %s' % val_latent_avg_magnitude)
     assert np.isclose(np_val_message_reconstruct, np_val_decoder_reconstruct).all()
 
 # INTERACT #############################################################################################################
@@ -161,35 +178,41 @@ def convert_string_to_numpy(msg):
     return np_message
 
 print('Test the autoencoder!')
-print('Would you like to test individual messages, or test the space? (individual/space/neither)')
-choice = input()
-if choice == 'individual':
-    while True:
-        your_message = input('Message: ')
-        np_your_message = convert_string_to_numpy(your_message)
-        np_your_message_reconstruct = auto_encoder.reconstruct(np_your_message, 1)
-        your_message_reconstruct = sdt.convert_numpy_array_to_strings(np_your_message_reconstruct, vocabulary,
-                                                                      stop_token=STOP_TOKEN,
-                                                                      keep_stop_token=True)
-        print('Reconstruction: %s' % your_message_reconstruct[0])
+while(True):
+    print('Would you like to test individual messages, or test the space? (individual/space/neither)')
+    choice = input()
+    if choice == 'individual':
+        while True:
+            your_message = input('Message: ')
+            if your_message == 'exit':
+                break
+            np_your_message = convert_string_to_numpy(your_message)
+            np_your_message_reconstruct = auto_encoder.reconstruct(np_your_message, 1)
+            your_message_reconstruct = sdt.convert_numpy_array_to_strings(np_your_message_reconstruct, vocabulary,
+                                                                          stop_token=STOP_TOKEN,
+                                                                          keep_stop_token=True)
+            print('Reconstruction: %s' % your_message_reconstruct[0])
 
-if choice == 'space':
-    while True:
-        num_increments = int(input('Number of increments: '))
-        first_message = input('First message: ')
-        second_message = input('Second message: ')
-        np_first_message = convert_string_to_numpy(first_message)
-        np_second_message = convert_string_to_numpy(second_message)
-        np_first_latent = encoder.encode(np_first_message, BATCH_SIZE)
-        np_second_latent = encoder.encode(np_second_message, BATCH_SIZE)
-        np_increment = (np_first_latent - np_second_latent) / num_increments
-        for i in range(num_increments + 1):
-            np_new_latent = np_second_latent + i * np_increment
-            np_new_message = decoder.decode(np_new_latent, BATCH_SIZE)
-            new_message = sdt.convert_numpy_array_to_strings(np_new_message, vocabulary,
-                                                             stop_token=STOP_TOKEN,
-                                                             keep_stop_token=True)[0]
-            print('Increment %s: %s' % (i, new_message))
+    if choice == 'space':
+        while True:
+            wish_to_continue = input('Continue? (y/n)')
+            if wish_to_continue != 'y' and wish_to_continue != 'yes':
+                break
+            num_increments = int(input('Number of INCREMENTS: '))
+            first_message = input('First message: ')
+            second_message = input('Second message: ')
+            np_first_message = convert_string_to_numpy(first_message)
+            np_second_message = convert_string_to_numpy(second_message)
+            np_first_latent = encoder.encode(np_first_message, BATCH_SIZE)
+            np_second_latent = encoder.encode(np_second_message, BATCH_SIZE)
+            np_increment = (np_first_latent - np_second_latent) / num_increments
+            for i in range(num_increments + 1):
+                np_new_latent = np_second_latent + i * np_increment
+                np_new_message = decoder.decode(np_new_latent, BATCH_SIZE)
+                new_message = sdt.convert_numpy_array_to_strings(np_new_message, vocabulary,
+                                                                 stop_token=STOP_TOKEN,
+                                                                 keep_stop_token=True)[0]
+                print('Increment %s: %s' % (i, new_message))
 
 
 

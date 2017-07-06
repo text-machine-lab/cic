@@ -15,6 +15,8 @@ AUTO_ENCODER_VOCAB_DICT = os.path.join(AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.
 GLOVE_200_FILE = os.path.join(DATA_DIR, 'glove.twitter.27B/glove.twitter.27B.200d.txt')
 VALIDATION_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'predictions.pkl')
 SUBMISSION_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'final_predictions.json')
+REDDIT_CRAWLER_CREDENTIALS = os.path.join(DATA_DIR, 'creds.txt')
+REDDIT_COMMENTS_DUMP = os.path.join(DATA_DIR, 'reddit_comments.pkl')
 
 # CONSTANTS
 MAX_QUESTION_WORDS = 30
