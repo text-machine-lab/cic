@@ -16,7 +16,7 @@ GLOVE_200_FILE = os.path.join(DATA_DIR, 'glove.twitter.27B/glove.twitter.27B.200
 VALIDATION_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'predictions.pkl')
 SUBMISSION_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'final_predictions.json')
 REDDIT_CRAWLER_CREDENTIALS = os.path.join(DATA_DIR, 'creds.txt')
-REDDIT_COMMENTS_DUMP = os.path.join(DATA_DIR, 'reddit_comments.pkl')
+REDDIT_COMMENTS_DUMP = os.path.join(DATA_DIR, 'reddit_comments_dump')
 
 # CONSTANTS
 MAX_QUESTION_WORDS = 30

@@ -14,6 +14,7 @@ import pickle
 import tensorflow as tf
 import sys
 import os
+import random
 
 # CONTROL PANEL ########################################################################################################
 
@@ -25,13 +26,14 @@ RNN_HIDDEN_DIM = 600
 LEARNED_EMBEDDING_SIZE = 100
 LEARNING_RATE = .0008
 KEEP_PROB = 0.5
-RESTORE_FROM_SAVE = False
+RESTORE_FROM_SAVE = True
 BATCH_SIZE = 20
 TRAINING_FRACTION = 0.9
-NUM_EPOCHS = 100
+NUM_EPOCHS = 0
 NUM_EXAMPLES_TO_PRINT = 20
 VALIDATE_ENCODER_AND_DECODER = False
 SAVE_TENSORBOARD_VISUALIZATION = False
+SHUFFLE_EXAMPLES = True
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -50,6 +52,26 @@ messages = mddt.load_messages_from_cornell_movie_lines(config.CORNELL_MOVIE_LINE
                                                        max_number_of_messages=MAX_NUMBER_OF_MESSAGES,
                                                        max_message_length=MAX_MESSAGE_LENGTH,
                                                        stop_token=STOP_TOKEN)
+print('Number of Movie Dialogue messages: %s' % len(messages))
+
+all_reddit_comments = []
+for filename in os.listdir(config.REDDIT_COMMENTS_DUMP):
+    reddit_comment_file = open(os.path.join(config.REDDIT_COMMENTS_DUMP, filename), 'rb')
+    reddit_comments = pickle.load(reddit_comment_file)
+    all_reddit_comments += reddit_comments
+
+for i in range(10):
+    print(all_reddit_comments[i])
+
+reddit_messages = [comment.split() for comment in all_reddit_comments if len(comment.split()) <= MAX_MESSAGE_LENGTH]
+
+print('Number of Reddit messages: %s' % len(reddit_messages))
+
+# Combine Dialogue and Reddit comments
+messages += reddit_messages
+
+if SHUFFLE_EXAMPLES:
+    random.shuffle(messages)
 
 np_message_lengths = np.array([len(message) for message in messages])
 print('Average message length: %s' % np.mean(np_message_lengths))

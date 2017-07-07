@@ -4,10 +4,16 @@ import praw
 import gensim
 import pickle
 import re
+import time
+import os
 
 MAX_COMMENT_LENGTH = 20
-MAX_RAW_COMMENTS = 1000000
+MAX_RAW_COMMENTS = 100000
 MAX_VOCAB_SIZE = 10000
+REPEAT_CRAWL_N_TIMES = 33
+
+if not os.path.exists(config.REDDIT_COMMENTS_DUMP):
+    os.makedirs(config.REDDIT_COMMENTS_DUMP)
 
 client_id = None
 secret = None
@@ -32,49 +38,56 @@ print(reddit.read_only)
 
 subreddit = reddit.subreddit('all')
 
-raw_comments = []
-for i, comment in enumerate(subreddit.stream.comments()):
-    comment_text = comment.body.lower()
-    comment_tokens = comment_text.split()
-    if len(comment_tokens) <= MAX_COMMENT_LENGTH:
-        #print(comment_text)
-        raw_comments.append(comment_tokens)
-        if len(raw_comments) >= MAX_RAW_COMMENTS:
-            break
+for j in range(REPEAT_CRAWL_N_TIMES):
+    print('Streaming in Reddit comments...')
+    raw_comments = []
+    for i, comment in enumerate(subreddit.stream.comments()):
+        comment_text = comment.body.lower()
+        comment_tokens = comment_text.split()
+        if len(comment_tokens) <= MAX_COMMENT_LENGTH:
+            #print(comment_text)
+            raw_comments.append(comment_tokens)
+            if len(raw_comments) >= MAX_RAW_COMMENTS:
+                break
 
-dictionary = gensim.corpora.Dictionary(documents=raw_comments)
-dictionary.filter_extremes(no_below=0, no_above=1.0, keep_n=MAX_VOCAB_SIZE)
-vocab_dict = dictionary.token2id
-print('Size of vocabulary: %s' % len(vocab_dict))
+    dictionary = gensim.corpora.Dictionary(documents=raw_comments)
+    dictionary.filter_extremes(no_below=0, no_above=1.0, keep_n=MAX_VOCAB_SIZE)
+    vocab_dict = dictionary.token2id
+    print('Size of vocabulary: %s' % len(vocab_dict))
 
-# Remove comments with uncommon vocabulary
-pruned_comments = []
-for each_comment in raw_comments:
-    comment_in_vocabulary = True
-    each_comment_join = ' '.join(each_comment)
-    clean_comment = re.sub('[^A-Za-z0-9\.\,\!\?\']+', ' ', each_comment_join)
-    for each_token in clean_comment.split():
-        if each_token not in vocab_dict\
-                or 'sub' in each_token\
-                or 'reddit' in each_token\
-                or 'vote' in each_token\
-                or 'link' in each_token\
-                or 'account' in each_token\
-                or '/' in each_token:
-            comment_in_vocabulary = False
-    if comment_in_vocabulary:
-        pruned_comments.append(clean_comment)
+    # Remove comments with uncommon vocabulary
+    pruned_comments = []
+    for each_comment in raw_comments:
+        comment_in_vocabulary = True
+        each_comment_join = ' '.join(each_comment)
+        clean_comment = re.sub('[^A-Za-z0-9\.\,\!\?\']+', ' ', each_comment_join)
+        for each_token in clean_comment.split():
+            if each_token not in vocab_dict\
+                    or 'sub' in each_token\
+                    or 'reddit' in each_token\
+                    or 'vote' in each_token\
+                    or 'link' in each_token\
+                    or 'account' in each_token\
+                    or '/' in each_token:
+                comment_in_vocabulary = False
+        if comment_in_vocabulary:
+            pruned_comments.append(clean_comment)
 
-for each_comment in pruned_comments:
-    print(each_comment)
+    num_examples_print = 10
+    for each_comment in pruned_comments[:num_examples_print]:
+        print(each_comment)
 
-print()
-print('Number of raw comments: %s' % len(raw_comments))
-print('Number of pruned comments: %s' % len(pruned_comments))
+    print()
+    print('Number of raw comments: %s' % len(raw_comments))
+    print('Number of pruned comments: %s' % len(pruned_comments))
 
-print('\nSaving...')
-pickle.dump(pruned_comments, open(config.REDDIT_COMMENTS_DUMP, 'wb'))
-print('Done')
+    moment = time.strftime("%Y-%b-%d__%H_%M_%S", time.localtime())
+    new_filename = os.path.join(config.REDDIT_COMMENTS_DUMP, 'reddit_comments' + moment + '.pkl')
+    f = open(new_filename, 'wb')
+
+    print('\nSaving...')
+    pickle.dump(pruned_comments, f)
+    print('Done')
 
 
 

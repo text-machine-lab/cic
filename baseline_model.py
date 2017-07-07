@@ -193,6 +193,9 @@ print('Average answer length: %s' % np.mean(np_answer_lengths))
 print('Answer length deviation: %s' % np.std(np_answer_lengths))
 print('Max answer length: %s' % np.max(np_answer_lengths))
 
+frac_answer_lengths_one = np.mean(np_answer_lengths == 1)
+print('Fraction of answers of length one: %s' % frac_answer_lengths_one)
+
 if VALIDATE_PROPER_INPUTS:
     print('Validating inputs...')
     assert np_contexts.shape[0] == num_examples

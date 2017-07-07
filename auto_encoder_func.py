@@ -33,7 +33,8 @@ class AutoEncoder:
                                                          shape=[self.vocab_size, self.word_embedding_size],
                                                          initializer=tf.contrib.layers.xavier_initializer())
         if self.encoder:
-            self.tf_latent_message = self.build_encoder(self.tf_message, self.tf_keep_prob)
+            self.tf_latent_message, self.tf_latent_mean, self.tf_latent_log_std \
+                = self.build_encoder(self.tf_message, self.tf_keep_prob)
         if self.decoder:
             if self.encoder:
                 decoder_input = self.tf_latent_message
@@ -41,9 +42,10 @@ class AutoEncoder:
                 decoder_input = self.tf_latent
             self.tf_message_prediction, self.tf_message_log_prob, self.tf_message_prob \
                 = self.build_decoder(decoder_input)
-        if self.decoder and self.learning_rate is not None:
-            self.train_op, self.tf_total_loss \
-                = self.build_trainer(self.tf_message_log_prob, self.tf_message, self.learning_rate)
+        if self.decoder and self.encoder and self.learning_rate is not None:
+            self.train_op, self.tf_total_loss, self.tf_kl_loss \
+                = self.build_trainer(self.tf_message_log_prob, self.tf_message,
+                                     self.tf_latent_mean, self.tf_latent_log_std, self.learning_rate)
 
             with tf.name_scope("SAVER"):
                 self.saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
@@ -122,7 +124,6 @@ class AutoEncoder:
     def build_encoder(self, tf_message, tf_keep_prob):
         """Build encoder portion of autoencoder in Tensorflow."""
         with tf.variable_scope('MESSAGE_ENCODER'):
-
             tf_message_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, tf_message, name='message_embeddings')
             tf_message_embs_dropout = tf.nn.dropout(tf_message_embs, tf_keep_prob)
 
@@ -130,7 +131,12 @@ class AutoEncoder:
             tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs_dropout, dtype=tf.float32)
             tf_last_output = tf_message_outputs[:, -1, :]
             tf_last_output_dropout = tf.nn.dropout(tf_last_output, tf_keep_prob)
-        return tf_last_output_dropout
+
+        tf_latent_mean, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, name='latent_mean')
+        tf_latent_log_std, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, name='latent_std')
+            #tf_epsilon = tf.random_normal(tf.shape(tf_latent_mean), stddev=1, mean=0)
+            #tf_sampled_latent = tf_latent_mean + tf.exp(tf_latent_log_std) * tf_epsilon
+        return tf_last_output_dropout, tf_latent_mean, tf_latent_log_std
 
     def build_decoder(self, tf_decoder_input):
         """Build decoder portion of autoencoder in Tensorflow."""
@@ -160,17 +166,21 @@ class AutoEncoder:
 
         return tf_message_prediction, tf_message_log_prob, tf_message_prob
 
-    def build_trainer(self, tf_message_log_prob, tf_message, learning_rate):
+    def build_trainer(self, tf_message_log_prob, tf_message, tf_latent_mean, tf_latent_log_std, learning_rate):
         """Calculate loss function and construct optimizer op
         for 'tf_message_log_prob' prediction and 'tf_message' label."""
         with tf.variable_scope('LOSS'):
             tf_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_message_log_prob,
                                                                        labels=tf_message,
                                                                        name='word_losses')
+            # Add KL loss
+            tf_kl_loss = .5 * (1 + tf_latent_log_std - tf.square(tf_latent_mean) - tf.exp(tf_latent_log_std))
+
             with tf.name_scope('total_loss'):
-                tf_total_loss = tf.reduce_mean(tf_losses)
+                tf_total_loss = tf.reduce_mean(tf_losses) + tf.reduce_mean(tf_kl_loss)
+
         train_op = tf.train.AdamOptimizer(learning_rate).minimize(tf_total_loss)
-        return train_op, tf_total_loss
+        return train_op, tf_total_loss, tf_kl_loss
 
     def load_scope_from_save(self, save_dir, sess, scope):
         """Load the encoder model variables from checkpoint in save_dir.
