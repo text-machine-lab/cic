@@ -16,6 +16,7 @@ BATCH_SIZE = 20
 NUM_EPOCHS = 100
 VALIDATE_INPUTS = False
 NUM_LAYERS = 60
+KEEP_PROB = .6
 
 vocab_dict = pickle.load(open(config.AUTO_ENCODER_VOCAB_DICT, 'rb'))
 
@@ -117,17 +118,12 @@ print('Baseline mean latent loss (no access to input): %s' % mean_latent_loss)
 
 tf_latent_message = tf.placeholder(tf.float32, shape=(None, aef.RNN_HIDDEN_DIM), name='latent_message')
 tf_latent_response = tf.placeholder(tf.float32, shape=(None, aef.RNN_HIDDEN_DIM), name='latent_response')
-
-# too many layers
-# tf_layer1, w1, _ = baseline_model_func.create_dense_layer(tf_latent_message, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM * 2, activation='relu')
-# tf_layer2, w2, _ = baseline_model_func.create_dense_layer(tf_layer1, aef.RNN_HIDDEN_DIM * 2, aef.RNN_HIDDEN_DIM * 2, activation='relu')
-# tf_layer3, w3, _ = baseline_model_func.create_dense_layer(tf_layer2, aef.RNN_HIDDEN_DIM * 2, aef.RNN_HIDDEN_DIM * 2, activation='relu')
-# tf_layer4, w4, _ = baseline_model_func.create_dense_layer(tf_layer3, aef.RNN_HIDDEN_DIM * 2, aef.RNN_HIDDEN_DIM * 2, activation='relu')
-# tf_latent_prediction, w5, _ = baseline_model_func.create_dense_layer(tf_layer2, aef.RNN_HIDDEN_DIM * 2, aef.RNN_HIDDEN_DIM, activation=None)
+tf_keep_prob = tf.placeholder_with_default(1.0, shape=(), name='keep_prob')
 
 tf_input = tf_latent_message
 for i in range(NUM_LAYERS):
-    tf_relu, _, _ = baseline_model_func.create_dense_layer(tf_input, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation='relu', std=.001)
+    tf_input_dropout = tf.nn.dropout(tf_input, tf_keep_prob)
+    tf_relu, _, _ = baseline_model_func.create_dense_layer(tf_input_dropout, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation='relu', std=.001)
     tf_output, _, _ = baseline_model_func.create_dense_layer(tf_relu, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation=None, std=.001)
     tf_input = tf_input + tf_output
 
