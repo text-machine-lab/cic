@@ -1,39 +1,25 @@
 """Converts a sentence of words into a latent representation, then converts that representation
 back into the original sentence, with some reconstruction loss. Latent space is continuous, and can
 be used in a GAN setting."""
-import chat_model_func
-import squad_dataset_tools as sdt
-import movie_dialogue_dataset_tools as mddt
-import baseline_model_func
-import auto_encoder_func
-import spacy
-import config
-import numpy as np
-import gensim
-import pickle
-import tensorflow as tf
-import sys
 import os
+import pickle
 import random
+import sys
 
-# CONTROL PANEL ########################################################################################################
+import gensim
+import numpy as np
+import spacy
+import tensorflow as tf
 
-MAX_MESSAGE_LENGTH = 10
-MAX_NUMBER_OF_MESSAGES = None
-STOP_TOKEN = '<STOP>'
-DELIMITER = ' +++$+++ '
-RNN_HIDDEN_DIM = 600
-LEARNED_EMBEDDING_SIZE = 100
-LEARNING_RATE = .0008
-KEEP_PROB = 0.5
-RESTORE_FROM_SAVE = True
-BATCH_SIZE = 20
-TRAINING_FRACTION = 0.9
-NUM_EPOCHS = 0
-NUM_EXAMPLES_TO_PRINT = 20
-VALIDATE_ENCODER_AND_DECODER = False
-SAVE_TENSORBOARD_VISUALIZATION = False
-SHUFFLE_EXAMPLES = True
+import auto_encoder_func
+import baseline_model_func
+import chat_model_func
+import config
+import movie_dialogue_dataset_tools as mddt
+import squad_dataset_tools as sdt
+from auto_encoder_func import MAX_MESSAGE_LENGTH, MAX_NUMBER_OF_MESSAGES, STOP_TOKEN, RNN_HIDDEN_DIM, \
+    LEARNED_EMBEDDING_SIZE, LEARNING_RATE, KEEP_PROB, RESTORE_FROM_SAVE, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
+    NUM_EXAMPLES_TO_PRINT, VALIDATE_ENCODER_AND_DECODER, SAVE_TENSORBOARD_VISUALIZATION, SHUFFLE_EXAMPLES
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -53,23 +39,25 @@ messages = mddt.load_messages_from_cornell_movie_lines(config.CORNELL_MOVIE_LINE
                                                        max_message_length=MAX_MESSAGE_LENGTH,
                                                        stop_token=STOP_TOKEN)
 print('Number of Movie Dialogue messages: %s' % len(messages))
+if auto_encoder_func.USE_REDDIT_MESSAGES:
+    all_reddit_comments = []
+    for filename in os.listdir(config.REDDIT_COMMENTS_DUMP):
+        reddit_comment_file = open(os.path.join(config.REDDIT_COMMENTS_DUMP, filename), 'rb')
+        reddit_comments = pickle.load(reddit_comment_file)
+        all_reddit_comments += reddit_comments
 
-all_reddit_comments = []
-for filename in os.listdir(config.REDDIT_COMMENTS_DUMP):
-    reddit_comment_file = open(os.path.join(config.REDDIT_COMMENTS_DUMP, filename), 'rb')
-    reddit_comments = pickle.load(reddit_comment_file)
-    all_reddit_comments += reddit_comments
+    for i in range(10):
+        print(all_reddit_comments[i])
 
-for i in range(10):
-    print(all_reddit_comments[i])
+    reddit_messages = [comment.split() for comment in all_reddit_comments if len(comment.split()) <= MAX_MESSAGE_LENGTH]
 
-reddit_messages = [comment.split() for comment in all_reddit_comments if len(comment.split()) <= MAX_MESSAGE_LENGTH]
+    print('Number of Reddit messages: %s' % len(reddit_messages))
 
-print('Number of Reddit messages: %s' % len(reddit_messages))
+    # Combine Dialogue and Reddit comments
+    messages += reddit_messages
 
-# Combine Dialogue and Reddit comments
-messages += reddit_messages
-
+if auto_encoder_func.SEED is not None:
+    random.seed(auto_encoder_func.SEED)
 if SHUFFLE_EXAMPLES:
     random.shuffle(messages)
 
@@ -123,7 +111,8 @@ with tf.Graph().as_default() as autoencoder_graph:
                                                  MAX_MESSAGE_LENGTH, encoder=True, decoder=True,
                                                  save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
                                                  load_from_save=RESTORE_FROM_SAVE,
-                                                 learning_rate=LEARNING_RATE)
+                                                 learning_rate=LEARNING_RATE,
+                                                 variational=auto_encoder_func.VARIATIONAL)
     if SAVE_TENSORBOARD_VISUALIZATION:
         baseline_model_func.create_tensorboard_visualization('chat')
 
@@ -167,10 +156,6 @@ for index, message_reconstruct in enumerate(val_message_reconstruct):
         print(message_reconstruct, '\t\t\t|||', original_message)
     if original_message == message_reconstruct:
         num_validation_examples_correct += 1
-    else:
-        print(original_message)
-        print(message_reconstruct)
-        print()
 
 validation_accuracy = num_validation_examples_correct / num_val_messages
 print('Validation EM accuracy: %s' % validation_accuracy)
@@ -180,14 +165,16 @@ with tf.Graph().as_default() as encoder_graph:
                                             MAX_MESSAGE_LENGTH, encoder=True, decoder=False,
                                             save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
                                             load_from_save=True,
-                                            learning_rate=LEARNING_RATE)
+                                            learning_rate=LEARNING_RATE,
+                                            variational=auto_encoder_func.VARIATIONAL)
 
 with tf.Graph().as_default() as decoder_graph:
     decoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
                                             MAX_MESSAGE_LENGTH, encoder=False, decoder=True,
                                             save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
                                             load_from_save=True,
-                                            learning_rate=LEARNING_RATE)
+                                            learning_rate=LEARNING_RATE,
+                                            variational=auto_encoder_func.VARIATIONAL)
 
 if VALIDATE_ENCODER_AND_DECODER:
     np_val_latent = encoder.encode(np_val_messages, BATCH_SIZE)
@@ -200,11 +187,7 @@ if VALIDATE_ENCODER_AND_DECODER:
 # INTERACT #############################################################################################################
 
 
-def convert_string_to_numpy(msg):
-    tk_message = nlp.tokenizer(msg.lower())
-    tk_tokens = [str(token) for token in tk_message if str(token) != ' ' and str(token) in vocab_dict] + [STOP_TOKEN]
-    np_message = chat_model_func.construct_numpy_from_messages([tk_tokens], vocab_dict, MAX_MESSAGE_LENGTH)
-    return np_message
+
 
 print('Test the autoencoder!')
 while(True):
@@ -215,7 +198,7 @@ while(True):
             your_message = input('Message: ')
             if your_message == 'exit':
                 break
-            np_your_message = convert_string_to_numpy(your_message)
+            np_your_message = auto_encoder_func.convert_string_to_numpy(your_message, nlp, vocab_dict)
             np_your_message_reconstruct = auto_encoder.reconstruct(np_your_message, 1)
             your_message_reconstruct = sdt.convert_numpy_array_to_strings(np_your_message_reconstruct, vocabulary,
                                                                           stop_token=STOP_TOKEN,
@@ -230,8 +213,8 @@ while(True):
             num_increments = int(input('Number of INCREMENTS: '))
             first_message = input('First message: ')
             second_message = input('Second message: ')
-            np_first_message = convert_string_to_numpy(first_message)
-            np_second_message = convert_string_to_numpy(second_message)
+            np_first_message = auto_encoder_func.convert_string_to_numpy(first_message, nlp, vocab_dict)
+            np_second_message = auto_encoder_func.convert_string_to_numpy(second_message, nlp, vocab_dict)
             np_first_latent = encoder.encode(np_first_message, BATCH_SIZE)
             np_second_latent = encoder.encode(np_second_message, BATCH_SIZE)
             np_increment = (np_first_latent - np_second_latent) / num_increments
@@ -242,6 +225,9 @@ while(True):
                                                                  stop_token=STOP_TOKEN,
                                                                  keep_stop_token=True)[0]
                 print('Increment %s: %s' % (i, new_message))
+
+    if choice == 'neither':
+        break
 
 
 

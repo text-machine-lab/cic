@@ -17,18 +17,19 @@ sdt.initialize_nlp()
 
 LEARNING_RATE = .001
 NUM_PARAGRAPHS = None
-RNN_HIDDEN_DIM = 200
+RNN_HIDDEN_DIM = 600
 NUM_EXAMPLES_TO_PRINT = 40
-TRAIN_FRAC = 0.8
+TRAIN_FRAC = 0.9
 VALIDATE_PROPER_INPUTS = True
 RESTORE_FROM_SAVE = False
 TRAIN_MODEL_BEFORE_PREDICTION = True
 PREDICT_ON_TRAINING_EXAMPLES = False  # Predict on all training examples after training
-NUM_EPOCHS = 50
+NUM_EPOCHS = 100
 PRINT_TRAINING_EXAMPLES = True
 PRINT_VALIDATION_EXAMPLES = True
 PRINT_ACCURACY_EVERY_N_BATCHES = None
 BATCH_SIZE = 20
+KEEP_PROB = .8
 STOP_TOKEN_REWARD = 2
 TURN_OFF_TF_LOGGING = True
 USE_SPACY_NOT_GLOVE = True  # Use Spacy GloVe embeddings or Twitter Glove embeddings
@@ -38,6 +39,7 @@ SAVE_VALIDATION_PREDICTIONS = True
 PRODUCE_OUTPUT_PREDICTIONS_FILE = False
 REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH = False  # Creates an unrealistic dataset with no cropping
 REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS = 0.0
+SEED = 'hello world'
 
 # SUBMISSION ###########################################################################################################
 
@@ -66,6 +68,9 @@ if len(sys.argv) > 3:
     config.BASELINE_MODEL_SAVE_DIR = sys.argv[3]
 
 # PRE-PROCESSING #######################################################################################################
+
+if SEED is not None:
+    random.seed(SEED)
 
 if not USE_SPACY_NOT_GLOVE:
     config.GLOVE_EMB_SIZE = 200
@@ -257,11 +262,13 @@ with tf.name_scope('PLACEHOLDERS'):
     tf_answer_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_ANSWER_WORDS), name='answer_indices')
     tf_answer_masks = tf.placeholder(dtype=tf.float32, shape=(None, config.MAX_ANSWER_WORDS), name='answer_masks')
     tf_batch_size = tf.placeholder(dtype=tf.int32, shape=(), name='batch_size')
+    tf_keep_prob = tf.placeholder_with_default(1.0, shape=(), name='keep_prob')
 
 with tf.name_scope('INPUT_EMBEDDINGS'):
     tf_question_embs = tf.nn.embedding_lookup(tf_embeddings, tf_question_indices, name='question_embeddings')
+    tf_question_embs_dropout = tf.nn.dropout(tf_question_embs, tf_keep_prob)
     tf_context_embs = tf.nn.embedding_lookup(tf_embeddings, tf_context_indices, name='context_embeddings')
-
+    tf_context_embs_dropout = tf.nn.dropout(tf_context_embs, tf_keep_prob)
 # Correct so far...
 
 print('Question embeddings shape: %s' % str(tf_question_embs.shape))
@@ -272,7 +279,7 @@ print('Context embeddings shape: %s' % str(tf_context_embs.shape))
 # Model
 with tf.variable_scope('QUESTION_ENCODER'):
     question_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
-    tf_question_outputs, tf_question_state = tf.nn.dynamic_rnn(question_lstm, tf_question_embs,
+    tf_question_outputs, tf_question_state = tf.nn.dynamic_rnn(question_lstm, tf_question_embs_dropout,
                                                                sequence_length=None, dtype=tf.float32)
 
 # tf_question_state_reshape = tf.reshape(tf_question_state, [-1, 1, RNN_HIDDEN_DIM])
@@ -283,10 +290,8 @@ with tf.variable_scope('QUESTION_ENCODER'):
 
 with tf.variable_scope('CONTEXT_ENCODER'):
     context_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
-    tf_context_outputs, tf_context_state = tf.nn.dynamic_rnn(context_lstm, tf_context_embs,
+    tf_context_outputs, tf_context_state = tf.nn.dynamic_rnn(context_lstm, tf_context_embs_dropout,
                                                              sequence_length=None, dtype=tf.float32)
-
-# Pretty sure this is correct so far...
 
 with tf.variable_scope('MATCH_GRU'):
     with tf.variable_scope('FORWARD'):
@@ -294,8 +299,9 @@ with tf.variable_scope('MATCH_GRU'):
     with tf.variable_scope('BACKWARD'):
         Hr_backward = baseline_model_func.match_gru(tf_question_outputs, tf.reverse(tf_context_outputs, [1]), tf_batch_size, RNN_HIDDEN_DIM)
     Hr = tf.concat([Hr_forward, tf.reverse(Hr_backward, [1])], axis=2)
+    Hr_dropout = tf.nn.dropout(Hr, tf_keep_prob)
 
-    Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM * 2]), Hr], axis=1, name='Hr_tilda')
+    Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, RNN_HIDDEN_DIM * 2]), Hr_dropout], axis=1, name='Hr_tilda')
 
 with tf.name_scope('OUTPUT'):
     tf_log_probabilities, all_hidden_states = baseline_model_func.pointer_net(Hr_tilda, tf_batch_size, RNN_HIDDEN_DIM)
@@ -438,7 +444,8 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
                                                                    tf_answer_masks: np_answer_mask_batch,
                                                                    tf_context_indices: np_context_batch,
                                                                    tf_context_lengths: np_context_length_batch,
-                                                                   tf_batch_size: BATCH_SIZE})
+                                                                   tf_batch_size: BATCH_SIZE,
+                                                                   tf_keep_prob: KEEP_PROB})
             if epoch == NUM_EPOCHS - 1 and i == num_batches - 1:
                 for j, hidden_state in enumerate(np_all_hidden_states):
                     print('Timestep: %s' % j)

@@ -3,8 +3,33 @@ import tensorflow as tf
 import baseline_model_func
 import chat_model_func
 import numpy as np
-import pickle
-import squad_dataset_tools as sdt
+
+MAX_MESSAGE_LENGTH = 10
+MAX_NUMBER_OF_MESSAGES = None
+STOP_TOKEN = '<STOP>'
+DELIMITER = ' +++$+++ '
+RNN_HIDDEN_DIM = 1000
+LEARNED_EMBEDDING_SIZE = 100
+LEARNING_RATE = .0006
+KEEP_PROB = 1.0
+RESTORE_FROM_SAVE = True
+BATCH_SIZE = 20
+TRAINING_FRACTION = 0.9
+NUM_EPOCHS = 0
+NUM_EXAMPLES_TO_PRINT = 20
+VALIDATE_ENCODER_AND_DECODER = False
+SAVE_TENSORBOARD_VISUALIZATION = False
+SHUFFLE_EXAMPLES = True
+USE_REDDIT_MESSAGES = False
+VARIATIONAL = False
+SEED = 'hello world'
+
+def convert_string_to_numpy(msg, nlp, vocab_dict):
+    tk_message = nlp.tokenizer(msg.lower())
+    tk_tokens = [str(token) for token in tk_message if str(token) != ' ' and str(token) in vocab_dict] + [STOP_TOKEN]
+    np_message = chat_model_func.construct_numpy_from_messages([tk_tokens], vocab_dict, MAX_MESSAGE_LENGTH)
+    return np_message
+
 
 class AutoEncoder:
     """Auto-encoder model built in Tensorflow. Encodes English sentences as points
@@ -13,7 +38,8 @@ class AutoEncoder:
     sequences other than English sentences. Represents input tokens as indices and
     learns an embedding per index."""
     def __init__(self, word_embedding_size, vocab_size, rnn_size, max_message_size,
-                 encoder=True, decoder=True, learning_rate=None, save_dir=None, load_from_save=False):
+                 encoder=True, decoder=True, learning_rate=None, save_dir=None, load_from_save=False,
+                 variational=True):
         self.word_embedding_size = word_embedding_size
         self.encoder = encoder
         self.decoder = decoder
@@ -28,13 +54,14 @@ class AutoEncoder:
         self.tf_message = tf.placeholder(dtype=tf.int32, shape=[None, self.max_message_size], name='input_message')
         self.tf_latent = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
         self.tf_keep_prob = tf.placeholder_with_default(1.0, (), name='keep_prob')
+        self.tf_kl_const = tf.placeholder_with_default(1.0, (), name='kl_const')
         with tf.variable_scope('LEARNED_EMBEDDINGS'):
             self.tf_learned_embeddings = tf.get_variable('learned_embeddings',
                                                          shape=[self.vocab_size, self.word_embedding_size],
                                                          initializer=tf.contrib.layers.xavier_initializer())
         if self.encoder:
             self.tf_latent_message, self.tf_latent_mean, self.tf_latent_log_std \
-                = self.build_encoder(self.tf_message, self.tf_keep_prob)
+                = self.build_encoder(self.tf_message, self.tf_keep_prob, include_epsilon=(self.decoder and variational))
         if self.decoder:
             if self.encoder:
                 decoder_input = self.tf_latent_message
@@ -43,9 +70,9 @@ class AutoEncoder:
             self.tf_message_prediction, self.tf_message_log_prob, self.tf_message_prob \
                 = self.build_decoder(decoder_input)
         if self.decoder and self.encoder and self.learning_rate is not None:
-            self.train_op, self.tf_total_loss, self.tf_kl_loss \
+            self.train_op, self.tf_output_loss, self.tf_kl_loss \
                 = self.build_trainer(self.tf_message_log_prob, self.tf_message,
-                                     self.tf_latent_mean, self.tf_latent_log_std, self.learning_rate)
+                                     self.tf_latent_mean, self.tf_latent_log_std, self.learning_rate, variational=variational)
 
             with tf.name_scope("SAVER"):
                 self.saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
@@ -100,28 +127,38 @@ class AutoEncoder:
         np_val_message_reconstruct = np.concatenate(all_val_message_batches, axis=0)
         return np_val_message_reconstruct
 
-    def train(self, np_input, num_epochs, batch_size, keep_prob=1.0):
+    def train(self, np_input, num_epochs, batch_size, keep_prob=1.0, kl_const_start=0, kl_increase=0.1, kl_max=1.0, verbose=True):
         """Trains on examples from np_input for num_epoch epochs,
         by dividing the data into batches of size batch_size."""
         examples_per_print = 200
         for epoch in range(num_epochs):
+            print('Epoch: %s' % epoch)
+            kl_const = min(kl_const_start + epoch * kl_increase, kl_max)
+            if verbose:
+                print('KL multiplier: %s' % kl_const)
             train_batch_gen = chat_model_func.BatchGenerator(np_input, batch_size)
             all_train_message_batches = []
             per_print_batch_losses = []
+            per_print_batch_kl_losses = []
             for batch_index, np_message_batch in enumerate(train_batch_gen.generate_batches()):
-                _, batch_loss, np_batch_message_reconstruct = self.sess.run([self.train_op, self.tf_total_loss, self.tf_message_prediction],
-                                                                       feed_dict={self.tf_message: np_message_batch,
-                                                                                  self.tf_keep_prob: keep_prob})
+                _, batch_output_loss, batch_kl_loss, np_batch_message_reconstruct = self.sess.run([self.train_op, self.tf_output_loss,
+                                                                                                   self.tf_kl_loss, self.tf_message_prediction],
+                                                                                                   feed_dict={self.tf_message: np_message_batch,
+                                                                                                              self.tf_keep_prob: keep_prob,
+                                                                                                              self.tf_kl_const: kl_const})
                 all_train_message_batches.append(np_batch_message_reconstruct)
-                per_print_batch_losses.append(batch_loss)
-                if batch_index % examples_per_print == 0:
-                    print('Batch loss: %s' % np.mean(per_print_batch_losses))
+                per_print_batch_losses.append(batch_output_loss)
+                per_print_batch_kl_losses.append(batch_kl_loss)
+                if batch_index % examples_per_print == 0 and verbose:
+                    print('Batch prediction loss: %s' % np.mean(per_print_batch_losses))
+                    print('Batch kl loss: %s' % np.mean(per_print_batch_kl_losses))
                     per_print_batch_losses = []
+                    per_print_batch_kl_losses = []
             self.saver.save(self.sess, self.save_dir, global_step=epoch)
         np_train_message_reconstruct = np.concatenate(all_train_message_batches, axis=0)
         return np_train_message_reconstruct
 
-    def build_encoder(self, tf_message, tf_keep_prob):
+    def build_encoder(self, tf_message, tf_keep_prob, include_epsilon=True):
         """Build encoder portion of autoencoder in Tensorflow."""
         with tf.variable_scope('MESSAGE_ENCODER'):
             tf_message_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, tf_message, name='message_embeddings')
@@ -132,11 +169,15 @@ class AutoEncoder:
             tf_last_output = tf_message_outputs[:, -1, :]
             tf_last_output_dropout = tf.nn.dropout(tf_last_output, tf_keep_prob)
 
-        tf_latent_mean, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, name='latent_mean')
-        tf_latent_log_std, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, name='latent_std')
-            #tf_epsilon = tf.random_normal(tf.shape(tf_latent_mean), stddev=1, mean=0)
-            #tf_sampled_latent = tf_latent_mean + tf.exp(tf_latent_log_std) * tf_epsilon
-        return tf_last_output_dropout, tf_latent_mean, tf_latent_log_std
+            tf_latent_mean, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, name='latent_mean')
+            tf_latent_log_std, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, name='latent_std',
+                                                                             activation='relu')
+            if include_epsilon:
+                tf_epsilon = tf.random_normal(tf.shape(tf_latent_mean), stddev=1, mean=0)
+                tf_sampled_latent = tf_latent_mean + tf.exp(tf_latent_log_std) * tf_epsilon
+            else:
+                tf_sampled_latent = tf_latent_mean
+        return tf_sampled_latent, tf_latent_mean, tf_latent_log_std
 
     def build_decoder(self, tf_decoder_input):
         """Build decoder portion of autoencoder in Tensorflow."""
@@ -166,21 +207,26 @@ class AutoEncoder:
 
         return tf_message_prediction, tf_message_log_prob, tf_message_prob
 
-    def build_trainer(self, tf_message_log_prob, tf_message, tf_latent_mean, tf_latent_log_std, learning_rate):
+    def build_trainer(self, tf_message_log_prob, tf_message, tf_latent_mean, tf_latent_log_std, learning_rate, variational=True):
         """Calculate loss function and construct optimizer op
         for 'tf_message_log_prob' prediction and 'tf_message' label."""
         with tf.variable_scope('LOSS'):
             tf_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_message_log_prob,
                                                                        labels=tf_message,
                                                                        name='word_losses')
+            tf_output_loss = tf.reduce_mean(tf_losses)
             # Add KL loss
-            tf_kl_loss = .5 * (1 + tf_latent_log_std - tf.square(tf_latent_mean) - tf.exp(tf_latent_log_std))
+            if variational:
+                tf_kl_loss = -tf.reduce_mean(.5 * (1 + tf_latent_log_std - tf.square(tf_latent_mean) - tf.exp(tf_latent_log_std)))
+                tf_kl_loss *= self.tf_kl_const
+            else:
+                tf_kl_loss = tf.zeros(())
 
             with tf.name_scope('total_loss'):
-                tf_total_loss = tf.reduce_mean(tf_losses) + tf.reduce_mean(tf_kl_loss)
+                tf_total_loss = tf_output_loss + tf_kl_loss
 
         train_op = tf.train.AdamOptimizer(learning_rate).minimize(tf_total_loss)
-        return train_op, tf_total_loss, tf_kl_loss
+        return train_op, tf_output_loss, tf_kl_loss
 
     def load_scope_from_save(self, save_dir, sess, scope):
         """Load the encoder model variables from checkpoint in save_dir.

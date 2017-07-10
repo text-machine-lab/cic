@@ -1,33 +1,16 @@
 """Model that uses the Cornell Movie Dialogs Corpus to conduct conversations. Here a conversation is a dialogue between
 two characters represented by a sequence of messages."""
-import config
+import os
 import spacy
 import numpy as np
-import chat_model_func
-import baseline_model_func
-import squad_dataset_tools as sdt
-import movie_dialogue_dataset_tools as mddt
 import tensorflow as tf
-import random
-import os
-
-# CONFIGURATION ########################################################################################################
-
-LEARNING_RATE = .0008
-NUM_CONVERSATIONS = None
-NUM_EXAMPLES_TO_PRINT = 20
-MAX_MESSAGE_LENGTH = 10
-LEARNED_EMBEDDING_SIZE = 100
-KEEP_PROB = 0.5
-RNN_HIDDEN_DIM = 1000
-TRAIN_FRACTION = 0.9
-BATCH_SIZE = 20
-NUM_EPOCHS = 200
-RESTORE_FROM_SAVE = False
-REVERSE_INPUT_MESSAGE = True
-SHUFFLE_EXAMPLES = True
-STOP_TOKEN = '<STOP>'
-SEQ2SEQ_IMPLEMENTATION = 'homemade'  # 'homemade', 'dynamic_rnn', 'keras'
+import baseline_model_func
+import chat_model_func
+import config
+import squad_dataset_tools as sdt
+from chat_model_func import LEARNING_RATE, NUM_EXAMPLES_TO_PRINT, MAX_MESSAGE_LENGTH, LEARNED_EMBEDDING_SIZE, KEEP_PROB, \
+    RNN_HIDDEN_DIM, TRAIN_FRACTION, BATCH_SIZE, NUM_EPOCHS, RESTORE_FROM_SAVE, REVERSE_INPUT_MESSAGE, STOP_TOKEN, \
+    SEQ2SEQ_IMPLEMENTATION
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -36,66 +19,10 @@ if not os.path.exists(config.CHAT_MODEL_SAVE_DIR):
 
 nlp = spacy.load('en')
 
-print('Processing conversations...')
-conversations, id_to_message = mddt.load_cornell_movie_dialogues_dataset(config.CORNELL_MOVIE_CONVERSATIONS_FILE,
-                                                                         max_conversations_to_load=NUM_CONVERSATIONS)
-print('Number of valid conversations: %s' % len(conversations))
+examples, np_message, np_response, vocab_dict, vocabulary = chat_model_func.preprocess_all_cornell_conversations(nlp)
 
-print('Finding messages...')
-mddt.load_messages_from_cornell_movie_lines_by_id(id_to_message, config.CORNELL_MOVIE_LINES_FILE, STOP_TOKEN, nlp)
-
-num_messages = len(id_to_message)
-print('Number of messages: %s' % num_messages)
-
-num_empty_messages = 0
-message_lengths = []
-for key in id_to_message:
-    if id_to_message[key] is None:
-        num_empty_messages += 1
-    else:
-        message_lengths.append(len(id_to_message[key][-1]))
-np_message_lengths = np.array(message_lengths)
-print('Number of missing messages: %s' % num_empty_messages)
-print('Average message length: %s' % np.mean(np_message_lengths))
-print('Message length std: %s' % np.std(np_message_lengths))
-print('Message max length: %s' % np.max(np_message_lengths))
-
-vocab_dict = mddt.build_vocabulary_from_messages(id_to_message)
-vocabulary = sdt.invert_dictionary(vocab_dict)
-vocabulary_length = len(vocab_dict)
-print('Vocabulary size: %s' % vocabulary_length)
-
-examples = mddt.construct_examples_from_conversations_and_messages(conversations, id_to_message,
-                                                                   max_message_length=MAX_MESSAGE_LENGTH)
-
-print('Creating examples...')
+vocabulary_length = len(vocabulary)
 num_examples = len(examples)
-print('Example example: %s' % str(examples[0]))
-print('Number of examples: %s' % num_examples)
-
-if SHUFFLE_EXAMPLES:
-    random.shuffle(examples)
-
-print('Constructing input numpy arrays...')
-np_message, np_response = chat_model_func.construct_numpy_from_examples(examples, vocab_dict, MAX_MESSAGE_LENGTH)
-
-print('Validating inputs...')
-message_reconstruct = sdt.convert_numpy_array_to_strings(np_message, vocabulary)
-response_reconstruct = sdt.convert_numpy_array_to_strings(np_response, vocabulary)
-for i in range(len(examples)):
-    each_message = ' '.join(examples[i][0])
-    each_response = ' '.join(examples[i][1])
-    # print(message_reconstruct[i])
-    # print(response_reconstruct[i])
-
-    if len(examples[i][0]) <= MAX_MESSAGE_LENGTH:
-        assert each_message == message_reconstruct[i]
-    if len(examples[i][1]) <= MAX_MESSAGE_LENGTH:
-        assert each_response == response_reconstruct[i]
-
-if REVERSE_INPUT_MESSAGE:
-    print('Reversing input arrays (improves performance)')
-    np_message = np.flip(np_message, axis=1)
 
 print(np_response.dtype)
 print(np_response[:-10])
@@ -146,7 +73,8 @@ if SEQ2SEQ_IMPLEMENTATION == 'dynamic_rnn':
     tf_latent_space_middle = tf.nn.relu(tf.matmul(tf_latent_space_message_dropout, tf_response_mapping_w1) + tf_response_mapping_b1)
     tf_latent_space_response = tf.nn.relu(tf.matmul(tf_latent_space_middle, tf_response_mapping_w2) + tf_response_mapping_b2)
 
-    tf_message_final_output_tile = tf.tile(tf.reshape(tf_latent_space_response, [-1, 1, RNN_HIDDEN_DIM]), [1, MAX_MESSAGE_LENGTH, 1])
+    tf_message_final_output_tile = tf.tile(tf.reshape(tf_latent_space_response, [-1, 1, RNN_HIDDEN_DIM]), [1,
+                                                                                                           MAX_MESSAGE_LENGTH, 1])
 
     with tf.variable_scope('RESPONSE_DECODER'):
         response_lstm = tf.contrib.rnn.LSTMCell(num_units=RNN_HIDDEN_DIM)
@@ -243,9 +171,9 @@ if num_train_examples > 0 and NUM_EPOCHS > 0:
             assert np_batch_response.shape == (BATCH_SIZE, MAX_MESSAGE_LENGTH)
 
             batch_loss, batch_response_predictions, _, batch_mask = sess.run([tf_total_loss, tf_response_prediction, train_op, tf_response_mask],
-                                                                              feed_dict={tf_message: np_batch_message,
-                                                                                         tf_response: np_batch_response,
-                                                                                         tf_keep_prob: KEEP_PROB})
+                                                                             feed_dict={tf_message: np_batch_message,
+                                                                                        tf_response: np_batch_response,
+                                                                                        tf_keep_prob: KEEP_PROB})
             all_batch_losses.append(batch_loss)
             all_batch_predictions.append(batch_response_predictions)
         print('Epoch loss: %s' % np.mean(all_batch_losses))
@@ -282,7 +210,7 @@ if num_train_examples < num_examples:
     num_val_batches = int(np_val_message.shape[0] / BATCH_SIZE + 1)
     all_val_prediction_batches = []
     for batch_index in range(num_val_batches):
-        np_val_message_batch = np_val_message[batch_index*BATCH_SIZE:batch_index*BATCH_SIZE+BATCH_SIZE, :]
+        np_val_message_batch = np_val_message[batch_index * BATCH_SIZE:batch_index * BATCH_SIZE + BATCH_SIZE, :]
         np_val_prediction_batch = sess.run(tf_response_prediction, feed_dict={tf_message: np_val_message_batch})
         all_val_prediction_batches.append(np_val_prediction_batch)
 
@@ -312,7 +240,8 @@ print('\nChat with the chat bot! Enter a message:')
 while True:
     chat_message = input('You: ')
     tk_chat_message = nlp.tokenizer(chat_message.lower())
-    tk_chat_tokens = [str(token) for token in tk_chat_message if str(token) != ' ' and str(token) in vocab_dict] + [STOP_TOKEN]
+    tk_chat_tokens = [str(token) for token in tk_chat_message if str(token) != ' ' and str(token) in vocab_dict] + [
+        STOP_TOKEN]
     #print(tk_chat_tokens)
     np_chat_message = chat_model_func.construct_numpy_from_messages([tk_chat_tokens], vocab_dict, MAX_MESSAGE_LENGTH)
     if REVERSE_INPUT_MESSAGE:

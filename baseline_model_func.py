@@ -197,10 +197,10 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
     return tf_probabilities, all_hidden_states
 
 
-def create_dense_layer(input_layer, input_size, output_size, activation=None, include_bias=True, name=None):
+def create_dense_layer(input_layer, input_size, output_size, activation=None, include_bias=True, name=None, std=.1):
     with tf.name_scope(name):
-        tf_w = tf.Variable(tf.random_normal([input_size, output_size], stddev=.1))
-        tf_b = tf.Variable(tf.random_normal([output_size]))
+        tf_w = tf.Variable(tf.random_normal([input_size, output_size], stddev=std))
+        tf_b = tf.Variable(tf.zeros([output_size]))
         output_layer = tf.matmul(input_layer, tf_w)
         if include_bias:
             output_layer = output_layer + tf_b

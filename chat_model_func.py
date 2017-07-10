@@ -1,22 +1,131 @@
 """Supporting functions used in chat_model.py"""
 import unittest2
 import numpy as np
+import movie_dialogue_dataset_tools as mddt
+import config
+import squad_dataset_tools as sdt
+import random
+
+LEARNING_RATE = .0008
+NUM_CONVERSATIONS = None
+NUM_EXAMPLES_TO_PRINT = 20
+MAX_MESSAGE_LENGTH = 10
+LEARNED_EMBEDDING_SIZE = 100
+KEEP_PROB = 0.5
+RNN_HIDDEN_DIM = 1000
+TRAIN_FRACTION = 0.9
+BATCH_SIZE = 20
+NUM_EPOCHS = 200
+RESTORE_FROM_SAVE = False
+REVERSE_INPUT_MESSAGE = True
+SHUFFLE_EXAMPLES = True
+STOP_TOKEN = '<STOP>'
+SEQ2SEQ_IMPLEMENTATION = 'homemade'  # 'homemade', 'dynamic_rnn', 'keras'
 
 class BatchGenerator:
-    def __init__(self, np_data, batch_size):
-        self.np_data = np_data
+    def __init__(self, datas, batch_size):
+        if isinstance(datas, list):
+            self.datas = datas
+        else:
+            self.datas = [datas]
         self.batch_size = batch_size
 
     def generate_batches(self):
-        m = self.np_data.shape[0]
+        m = self.datas[0].shape[0]
         num_batches = int(m / self.batch_size + 1)
         for batch_index in range(num_batches):
             if batch_index == num_batches - 1:
                 real_batch_size = m - batch_index * self.batch_size
             else:
                 real_batch_size = self.batch_size
-            np_batch = self.np_data[real_batch_size*batch_index:real_batch_size*batch_index+real_batch_size]
-            yield np_batch
+
+            if real_batch_size == 0:
+                break
+
+            batch = [np_data[real_batch_size*batch_index:real_batch_size*batch_index+real_batch_size] for np_data in self.datas]
+            if len(batch) > 1:
+                yield batch
+            else:
+                yield batch[0]
+
+
+def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=True, verbose=True, seed='hello world'):
+    """All preprocessing of conversational data for chat_model.py. This function is also
+    intended to be used by latent_chat_model.py"""
+    # seed so that train and validation examples don't get blended together.
+    random.seed(seed)
+    if verbose:
+        print('Processing conversations...')
+    conversations, id_to_message = mddt.load_cornell_movie_dialogues_dataset(config.CORNELL_MOVIE_CONVERSATIONS_FILE,
+                                                                             max_conversations_to_load=NUM_CONVERSATIONS)
+    if verbose:
+        print('Number of valid conversations: %s' % len(conversations))
+
+        print('Finding messages...')
+    mddt.load_messages_from_cornell_movie_lines_by_id(id_to_message, config.CORNELL_MOVIE_LINES_FILE, STOP_TOKEN, nlp)
+
+    num_messages = len(id_to_message)
+    if verbose:
+        print('Number of messages: %s' % num_messages)
+
+    num_empty_messages = 0
+    message_lengths = []
+    for key in id_to_message:
+        if id_to_message[key] is None:
+            num_empty_messages += 1
+        else:
+            message_lengths.append(len(id_to_message[key][-1]))
+    np_message_lengths = np.array(message_lengths)
+    if verbose:
+        print('Number of missing messages: %s' % num_empty_messages)
+        print('Average message length: %s' % np.mean(np_message_lengths))
+        print('Message length std: %s' % np.std(np_message_lengths))
+        print('Message max length: %s' % np.max(np_message_lengths))
+
+    if vocab_dict is None:
+        vocab_dict = mddt.build_vocabulary_from_messages(id_to_message)
+    vocabulary = sdt.invert_dictionary(vocab_dict)
+    vocabulary_length = len(vocab_dict)
+    if verbose:
+        print('Vocabulary size: %s' % vocabulary_length)
+
+    examples = mddt.construct_examples_from_conversations_and_messages(conversations, id_to_message,
+                                                                       max_message_length=MAX_MESSAGE_LENGTH)
+    if verbose:
+        print('Creating examples...')
+    num_examples = len(examples)
+
+    if verbose:
+        print('Example example: %s' % str(examples[0]))
+        print('Number of examples: %s' % num_examples)
+
+    if SHUFFLE_EXAMPLES:
+        random.shuffle(examples)
+
+    if verbose:
+        print('Constructing input numpy arrays...')
+    np_message, np_response = construct_numpy_from_examples(examples, vocab_dict, MAX_MESSAGE_LENGTH)
+    if verbose:
+        print('Validating inputs...')
+    message_reconstruct = sdt.convert_numpy_array_to_strings(np_message, vocabulary)
+    response_reconstruct = sdt.convert_numpy_array_to_strings(np_response, vocabulary)
+    for i in range(len(examples)):
+        each_message = ' '.join(examples[i][0])
+        each_response = ' '.join(examples[i][1])
+        # print(message_reconstruct[i])
+        # print(response_reconstruct[i])
+
+        if len(examples[i][0]) <= MAX_MESSAGE_LENGTH:
+            assert each_message == message_reconstruct[i]
+        if len(examples[i][1]) <= MAX_MESSAGE_LENGTH:
+            assert each_response == response_reconstruct[i]
+
+    if reverse_inputs:
+        if verbose:
+            print('Reversing input arrays (improves performance)')
+        np_message = np.flip(np_message, axis=1)
+
+    return examples, np_message, np_response, vocab_dict, vocabulary
 
 
 def construct_numpy_from_examples(examples, vocab_dict, max_length):
