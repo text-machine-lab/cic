@@ -5,6 +5,7 @@ import os
 import pickle
 import random
 import sys
+import optparse
 
 import gensim
 import numpy as np
@@ -21,11 +22,41 @@ from auto_encoder_func import MAX_MESSAGE_LENGTH, MAX_NUMBER_OF_MESSAGES, STOP_T
     LEARNED_EMBEDDING_SIZE, LEARNING_RATE, KEEP_PROB, RESTORE_FROM_SAVE, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
     NUM_EXAMPLES_TO_PRINT, VALIDATE_ENCODER_AND_DECODER, SAVE_TENSORBOARD_VISUALIZATION, SHUFFLE_EXAMPLES
 
+# ARGUMENTS ############################################################################################################
+
+if len(sys.argv) >= 2:
+    if sys.argv[1] == 'predict':
+        print('Predicting...')
+        NUM_EPOCHS = 0
+        RESTORE_FROM_SAVE = True
+    elif sys.argv[1] == 'train':
+        print('Training...')
+        if len(sys.argv) > 3:
+            auto_encoder_func.NUM_EPOCHS = int(sys.argv[2])
+        auto_encoder_func.RESTORE_FROM_SAVE = False
+
+parser = optparse.OptionParser()
+parser.add_option('-t', '--train', dest="train", default=True, help='train model for the specified number of epochs, and save')
+parser.add_option('-s', '--save_dir', dest="save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
+parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, help='specify number of epochs to train for')
+
+(options, args) = parser.parse_args()
+
+if not options.train:
+    NUM_EPOCHS = 0
+config.AUTO_ENCODER_MODEL_SAVE_DIR = options.save_dir
+config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
+NUM_EPOCHS = int(options.num_epochs)
+
+print('Number of epochs: %s' % NUM_EPOCHS)
+print('Save directory: %s' % config.AUTO_ENCODER_MODEL_SAVE_DIR)
+
+
 # PRE-PROCESSING #######################################################################################################
 
-# First cmd-line argument is save path for model checkpoint
-if len(sys.argv) >= 2:
-    config.AUTO_ENCODER_MODEL_SAVE_DIR = sys.argv[1]
+# # First cmd-line argument is save path for model checkpoint
+# if len(sys.argv) >= 2:
+#     config.AUTO_ENCODER_MODEL_SAVE_DIR = sys.argv[1]
 
 if not os.path.exists(config.AUTO_ENCODER_MODEL_SAVE_DIR):
     os.makedirs(config.AUTO_ENCODER_MODEL_SAVE_DIR)

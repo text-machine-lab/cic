@@ -8,20 +8,20 @@ MAX_MESSAGE_LENGTH = 10
 MAX_NUMBER_OF_MESSAGES = None
 STOP_TOKEN = '<STOP>'
 DELIMITER = ' +++$+++ '
-RNN_HIDDEN_DIM = 1000
-LEARNED_EMBEDDING_SIZE = 100
+RNN_HIDDEN_DIM = 1500
+LEARNED_EMBEDDING_SIZE = 200
 LEARNING_RATE = .0006
-KEEP_PROB = 1.0
-RESTORE_FROM_SAVE = True
+KEEP_PROB = .9
+RESTORE_FROM_SAVE = False
 BATCH_SIZE = 20
 TRAINING_FRACTION = 0.9
-NUM_EPOCHS = 0
+NUM_EPOCHS = 1
 NUM_EXAMPLES_TO_PRINT = 20
 VALIDATE_ENCODER_AND_DECODER = False
 SAVE_TENSORBOARD_VISUALIZATION = False
 SHUFFLE_EXAMPLES = True
 USE_REDDIT_MESSAGES = False
-VARIATIONAL = False
+VARIATIONAL = True
 SEED = 'hello world'
 
 def convert_string_to_numpy(msg, nlp, vocab_dict):
@@ -81,11 +81,11 @@ class AutoEncoder:
         self.sess.run(init)
         if load_from_save:
             print('Loading from save...')
-            self.load_scope_from_save(save_dir, self.sess, 'LEARNED_EMBEDDINGS')
+            load_scope_from_save(save_dir, self.sess, 'LEARNED_EMBEDDINGS')
             if self.encoder:
-                self.load_scope_from_save(save_dir, self.sess, 'MESSAGE_ENCODER')
+                load_scope_from_save(save_dir, self.sess, 'MESSAGE_ENCODER')
             if self.decoder:
-                self.load_scope_from_save(save_dir, self.sess, 'MESSAGE_DECODER')
+                load_scope_from_save(save_dir, self.sess, 'MESSAGE_DECODER')
 
     def encode(self, np_message, batch_size=None):
         """Converts sentences encoded as numpy arrays to points in a latent space."""
@@ -196,7 +196,7 @@ class AutoEncoder:
                                           initializer=tf.contrib.layers.xavier_initializer())
             with tf.name_scope('tf_message_log_probabilities'):
                 tf_response_outputs_reshape = tf.reshape(tf_response_outputs, [-1, self.rnn_size])
-                tf_response_output_embs = tf.matmul(tf_response_outputs_reshape, output_weight) + output_bias
+                tf_response_output_embs = tf.tanh(tf.matmul(tf_response_outputs_reshape, output_weight) + output_bias)
                 print(tf_response_output_embs.get_shape())
                 tf_flat_message_log_prob = tf.matmul(tf_response_output_embs, self.tf_learned_embeddings, transpose_b=True)
                 tf_message_log_prob = tf.reshape(tf_flat_message_log_prob, [-1, self.max_message_size, self.vocab_size])
@@ -228,13 +228,11 @@ class AutoEncoder:
         train_op = tf.train.AdamOptimizer(learning_rate).minimize(tf_total_loss)
         return train_op, tf_output_loss, tf_kl_loss
 
-    def load_scope_from_save(self, save_dir, sess, scope):
-        """Load the encoder model variables from checkpoint in save_dir.
-        Store them in session sess."""
-        vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
-        assert len(vars) > 0
-        baseline_model_func.restore_model_from_save(save_dir,
-                                                    var_list=vars, sess=sess)
 
-    def __call__(self, np_input):
-        pass
+def load_scope_from_save(save_dir, sess, scope):
+    """Load the encoder model variables from checkpoint in save_dir.
+    Store them in session sess."""
+    vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
+    assert len(vars) > 0
+    baseline_model_func.restore_model_from_save(save_dir,
+                                                var_list=vars, sess=sess)

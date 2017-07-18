@@ -49,7 +49,7 @@ class BatchGenerator:
                 yield batch[0]
 
 
-def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=True, verbose=True, seed='hello world'):
+def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=True, verbose=True, keep_duplicates=False, seed='hello world'):
     """All preprocessing of conversational data for chat_model.py. This function is also
     intended to be used by latent_chat_model.py"""
     # seed so that train and validation examples don't get blended together.
@@ -91,6 +91,7 @@ def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=Tr
 
     examples = mddt.construct_examples_from_conversations_and_messages(conversations, id_to_message,
                                                                        max_message_length=MAX_MESSAGE_LENGTH)
+
     if verbose:
         print('Creating examples...')
     num_examples = len(examples)
@@ -98,6 +99,28 @@ def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=Tr
     if verbose:
         print('Example example: %s' % str(examples[0]))
         print('Number of examples: %s' % num_examples)
+
+    non_duplicate_messages = []
+    non_duplicate_responses = []
+    num_duplicates = 0
+    for each_example in examples:
+        each_message = each_example[0]
+        each_response = each_example[1]
+        if each_message not in non_duplicate_messages:
+            non_duplicate_messages.append(each_message)
+            non_duplicate_responses.append(each_response)
+        else:
+            num_duplicates += 1
+    print('Number of duplicate examples: %s' % num_duplicates)
+
+    non_duplicate_examples = [(non_duplicate_message, non_duplicate_response)
+                              for non_duplicate_message, non_duplicate_response
+                              in zip(non_duplicate_messages, non_duplicate_responses)]
+
+    if not keep_duplicates:
+        print('Removing duplicate examples')
+        examples = non_duplicate_examples
+        print('Number of remaining examples: %s' % len(examples))
 
     if SHUFFLE_EXAMPLES:
         random.shuffle(examples)

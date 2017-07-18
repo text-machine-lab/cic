@@ -9,15 +9,40 @@ import numpy as np
 import spacy
 import chat_model_func
 import baseline_model_func
+import optparse
+import os
 
 LEARNING_RATE = .0001
 NUM_EXAMPLES = None
 BATCH_SIZE = 20
 NUM_EPOCHS = 100
 VALIDATE_INPUTS = False
-NUM_LAYERS = 60
+NUM_LAYERS = 80
 KEEP_PROB = .6
+RESTORE_FROM_SAVE = False
 
+parser = optparse.OptionParser()
+parser.add_option('-t', '--train', dest="train", default=True, help='train model for the specified number of epochs, and save')
+parser.add_option('-s', '--save_dir', dest="save_dir", default=config.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
+parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, help='specify number of epochs to train for')
+parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
+
+
+(options, args) = parser.parse_args()
+
+if not options.train:
+    NUM_EPOCHS = 0
+else:
+    NUM_EPOCHS = int(options.num_epochs)
+config.LATENT_CHAT_MODEL_SAVE_DIR = options.save_dir
+
+config.AUTO_ENCODER_MODEL_SAVE_DIR = options.auto_encoder_save_dir
+config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
+
+print('Number of epochs: %s' % NUM_EPOCHS)
+print('Model save directory: %s' % config.LATENT_CHAT_MODEL_SAVE_DIR)
+
+print('Loading vocabulary...')
 vocab_dict = pickle.load(open(config.AUTO_ENCODER_VOCAB_DICT, 'rb'))
 
 with tf.Graph().as_default() as encoder_graph:
@@ -40,23 +65,14 @@ with tf.Graph().as_default() as decoder_graph:
 
 nlp = spacy.load('en')
 
-examples, np_message, np_response, vocab_dict, vocabulary = chat_model_func.preprocess_all_cornell_conversations(nlp, vocab_dict=vocab_dict,
+examples, np_message, np_response, vocab_dict, vocabulary = chat_model_func.preprocess_all_cornell_conversations(nlp,
+                                                                                                                 vocab_dict=vocab_dict,
                                                                                                                  reverse_inputs=False)
 
 if NUM_EXAMPLES is not None:
     examples = examples[:NUM_EXAMPLES]
     np_message = np_message[:NUM_EXAMPLES, :]
     np_response = np_response[:NUM_EXAMPLES, :]
-
-non_duplicate_messages = []
-num_duplicates = 0
-for example in examples:
-    each_message = example[0]
-    if each_message not in non_duplicate_messages:
-        non_duplicate_messages.append(each_message)
-    else:
-        num_duplicates += 1
-print('Number of duplicates: %s' % num_duplicates)
 
 if NUM_EXAMPLES is None or NUM_EXAMPLES > 10:
     for i in range(10):
@@ -116,18 +132,19 @@ np_mean_latent_response = np.mean(np_latent_response, axis=0)
 mean_latent_loss = np.mean(np.square(np_latent_response - np_mean_latent_response))
 print('Baseline mean latent loss (no access to input): %s' % mean_latent_loss)
 
-tf_latent_message = tf.placeholder(tf.float32, shape=(None, aef.RNN_HIDDEN_DIM), name='latent_message')
-tf_latent_response = tf.placeholder(tf.float32, shape=(None, aef.RNN_HIDDEN_DIM), name='latent_response')
-tf_keep_prob = tf.placeholder_with_default(1.0, shape=(), name='keep_prob')
+with tf.variable_scope('LATENT_CHAT_MODEL'):
+    tf_latent_message = tf.placeholder(tf.float32, shape=(None, aef.RNN_HIDDEN_DIM), name='latent_message')
+    tf_latent_response = tf.placeholder(tf.float32, shape=(None, aef.RNN_HIDDEN_DIM), name='latent_response')
+    tf_keep_prob = tf.placeholder_with_default(1.0, shape=(), name='keep_prob')
 
-tf_input = tf_latent_message
-for i in range(NUM_LAYERS):
-    tf_input_dropout = tf.nn.dropout(tf_input, tf_keep_prob)
-    tf_relu, _, _ = baseline_model_func.create_dense_layer(tf_input_dropout, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation='relu', std=.001)
-    tf_output, _, _ = baseline_model_func.create_dense_layer(tf_relu, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation=None, std=.001)
-    tf_input = tf_input + tf_output
+    tf_input = tf_latent_message
+    for i in range(NUM_LAYERS):
+        tf_input_dropout = tf.nn.dropout(tf_input, tf_keep_prob)
+        tf_relu, _, _ = baseline_model_func.create_dense_layer(tf_input_dropout, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation='relu', std=.001)
+        tf_output, _, _ = baseline_model_func.create_dense_layer(tf_relu, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation=None, std=.001)
+        tf_input = tf_input + tf_output
 
-tf_latent_prediction = tf_input
+    tf_latent_prediction = tf_input
 
 tf_total_loss = tf.reduce_mean(tf.square(tf_latent_response - tf_latent_prediction))
 
@@ -135,6 +152,13 @@ train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(tf_total_loss)
 init = tf.global_variables_initializer()
 sess = tf.InteractiveSession()
 sess.run(init)
+
+if RESTORE_FROM_SAVE:
+    print('Restoring from save...')
+    aef.load_scope_from_save(config.LATENT_CHAT_MODEL_SAVE_DIR, sess, 'LATENT_CHAT_MODEL')
+
+with tf.name_scope("SAVER"):
+    saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
 
 for epoch in range(NUM_EPOCHS):
     print('Epoch: %s' % epoch)
@@ -154,7 +178,7 @@ for epoch in range(NUM_EPOCHS):
     print('Response std: %s' % np.std(np_response_batch))
     print('Prediction std: %s' % np.std(np_batch_response))
     print('Loss: %s' % np.mean(per_print_losses))
-    #print('Layers: %s, %s, %s, %s, %s' % (np.std(w1.eval()), np.std(w2.eval()), np.std(w3.eval()), np.std(w4.eval()), np.std(w5.eval())))
+    saver.save(sess, config.LATENT_CHAT_MODEL_SAVE_DIR, global_step=epoch)
 
 print('Speak to the model')
 while True:
