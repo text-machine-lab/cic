@@ -1,45 +1,26 @@
 """Trains and predicts a model using a Match-LSTM and Answer Pointer. Design based on this paper:
 https://arxiv.org/pdf/1608.07905.pdf"""
-import tensorflow as tf
-import squad_dataset_tools as sdt
-import config
-import baseline_model_func
-import numpy as np
-import os
-import random
-import pickle as pkl
-import sys
 import json
+import os
+import pickle as pkl
+import random
+import sys
+
+import numpy as np
+
+import baseline_model_func
+import config
+import squad_dataset_tools as sdt
+from baseline_model_func import LEARNING_RATE, NUM_PARAGRAPHS, RNN_HIDDEN_DIM, NUM_EXAMPLES_TO_PRINT, TRAIN_FRAC, \
+    VALIDATE_PROPER_INPUTS, RESTORE_FROM_SAVE, TRAIN_MODEL_BEFORE_PREDICTION, PREDICT_ON_TRAINING_EXAMPLES, NUM_EPOCHS, \
+    PRINT_TRAINING_EXAMPLES, PRINT_VALIDATION_EXAMPLES, PRINT_ACCURACY_EVERY_N_BATCHES, BATCH_SIZE, KEEP_PROB, \
+    STOP_TOKEN_REWARD, TURN_OFF_TF_LOGGING, USE_SPACY_NOT_GLOVE, SHUFFLE_EXAMPLES, SAVE_VALIDATION_PREDICTIONS, \
+    PRODUCE_OUTPUT_PREDICTIONS_FILE, REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH, \
+    REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS, SEED
 
 sdt.initialize_nlp()
 
 # CONTROL PANEL ########################################################################################################
-
-LEARNING_RATE = .001
-NUM_PARAGRAPHS = 50
-RNN_HIDDEN_DIM = 400
-NUM_EXAMPLES_TO_PRINT = 40
-TRAIN_FRAC = 0.9
-VALIDATE_PROPER_INPUTS = True
-RESTORE_FROM_SAVE = False
-TRAIN_MODEL_BEFORE_PREDICTION = True
-PREDICT_ON_TRAINING_EXAMPLES = False  # Predict on all training examples after training
-NUM_EPOCHS = 10
-PRINT_TRAINING_EXAMPLES = True
-PRINT_VALIDATION_EXAMPLES = True
-PRINT_ACCURACY_EVERY_N_BATCHES = None
-BATCH_SIZE = 20
-KEEP_PROB = .8
-STOP_TOKEN_REWARD = 2
-TURN_OFF_TF_LOGGING = True
-USE_SPACY_NOT_GLOVE = True  # Use Spacy GloVe embeddings or Twitter Glove embeddings
-SHUFFLE_EXAMPLES = True
-SIMILARITY_LOSS_CONST = 0
-SAVE_VALIDATION_PREDICTIONS = True
-PRODUCE_OUTPUT_PREDICTIONS_FILE = False
-REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH = False  # Creates an unrealistic dataset with no cropping
-REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS = 0.0
-SEED = 'hello world'
 
 # SUBMISSION ###########################################################################################################
 
@@ -80,9 +61,6 @@ if not os.path.exists(config.BASELINE_MODEL_SAVE_DIR):
 
 if TURN_OFF_TF_LOGGING:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-#tf_config = tf.ConfigProto()
-# tf_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
 
 print('Loading SQuAD dataset')
 paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
@@ -250,7 +228,7 @@ print('Fraction of answers found in passages: %s' % (num_answers_in_context / nu
 
 # GRAPH CREATION #######################################################################################################
 
-qa_model = baseline_model_func.LSTMBaselineModel(np_embeddings, RNN_HIDDEN_DIM, LEARNING_RATE,
+qa_model = baseline_model_func.LSTMBaselineModel(RNN_HIDDEN_DIM, LEARNING_RATE,
                                                  save_dir=config.BASELINE_MODEL_SAVE_DIR,
                                                  restore_from_save=RESTORE_FROM_SAVE)
 
@@ -268,10 +246,10 @@ if VALIDATE_PROPER_INPUTS:
     sample_size = 1000
     if sample_size > num_examples:
         sample_size = num_examples
-    fd={qa_model.tf_context_indices: np_contexts[:sample_size, :]}
+    fd={qa_model.tf_context_indices: np_contexts[:sample_size, :], qa_model.tf_embeddings: np_embeddings}
     np_sample_context_embs = qa_model.tf_context_embs.eval(fd)
     sample_examples = examples[:sample_size]
-
+    print('I am here.')
     num_sample_context_empty_embs = 0
     num_sample_context_embs = 0
     assert len(sample_examples) == np_sample_context_embs.shape[0]
@@ -300,7 +278,7 @@ if VALIDATE_PROPER_INPUTS:
                     if not np.isclose(word_vector, np.zeros([config.GLOVE_EMB_SIZE])).all():
                         assert np.isclose(np_sample_context_embs[i, j, :], word_vector).all()
                         assert np.isclose(np_sample_context_embs[i, j, :], stored_vector).all()
-        fd={qa_model.tf_question_indices: np_questions[:sample_size, :]}
+        fd={qa_model.tf_question_indices: np_questions[:sample_size, :], qa_model.tf_embeddings: np_embeddings}
         np_sample_question_embs = qa_model.tf_question_embs.eval(fd)
         for i in range(sample_size):
             question_tokens = questions[i].split()
@@ -324,7 +302,8 @@ val_index_start = BATCH_SIZE * num_batches
 print('Number of training examples: %s' % num_train_examples)
 
 if TRAIN_MODEL_BEFORE_PREDICTION:
-    np_train_predictions = qa_model.train(np_questions[:val_index_start, :],
+    np_train_predictions = qa_model.train(np_embeddings,
+                                          np_questions[:val_index_start, :],
                                           np_contexts[:val_index_start, :],
                                           np_answers[:val_index_start, :],
                                           np_answer_masks[:val_index_start, :],
@@ -333,10 +312,10 @@ if TRAIN_MODEL_BEFORE_PREDICTION:
 
 if PREDICT_ON_TRAINING_EXAMPLES:
     print('Predicting on training examples...')
-    np_train_predictions, np_train_probabilities = qa_model.predict_on_examples(
-                                                                   np_questions[:val_index_start, :],
-                                                                   np_contexts[:val_index_start, :],
-                                                                   BATCH_SIZE)
+    np_train_predictions, np_train_probabilities = qa_model.predict_on_examples(np_embeddings,
+                                                                                np_questions[:val_index_start, :],
+                                                                                np_contexts[:val_index_start, :],
+                                                                                BATCH_SIZE)
 
 if PRINT_TRAINING_EXAMPLES and (TRAIN_MODEL_BEFORE_PREDICTION or PREDICT_ON_TRAINING_EXAMPLES):
     print('Printing training examples...')
@@ -366,10 +345,10 @@ if PREDICT_ON_TRAINING_EXAMPLES or TRAIN_MODEL_BEFORE_PREDICTION:
 print('\n######################################\n')
 print('Predicting...')
 
-np_val_predictions, np_val_probabilities = qa_model.predict_on_examples(
-                                                             np_questions[val_index_start:, :],
-                                                             np_contexts[val_index_start:, :],
-                                                             BATCH_SIZE)
+np_val_predictions, np_val_probabilities = qa_model.predict_on_examples(np_embeddings,
+                                                                        np_questions[val_index_start:, :],
+                                                                        np_contexts[val_index_start:, :],
+                                                                        BATCH_SIZE)
 
 all_val_predictions = sdt.convert_numpy_array_answers_to_strings(np_val_predictions, contexts[val_index_start:],
                                                                  answer_is_span=False, zero_stop_token=True)

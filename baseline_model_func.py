@@ -6,14 +6,41 @@ import numpy as np
 import squad_dataset_tools as sdt
 
 
+LEARNING_RATE = .001
+NUM_PARAGRAPHS = 50
+RNN_HIDDEN_DIM = 400
+NUM_EXAMPLES_TO_PRINT = 40
+TRAIN_FRAC = 0.9
+VALIDATE_PROPER_INPUTS = True
+RESTORE_FROM_SAVE = False
+TRAIN_MODEL_BEFORE_PREDICTION = False
+PREDICT_ON_TRAINING_EXAMPLES = False  # Predict on all training examples after training
+NUM_EPOCHS = 10
+PRINT_TRAINING_EXAMPLES = True
+PRINT_VALIDATION_EXAMPLES = True
+PRINT_ACCURACY_EVERY_N_BATCHES = None
+BATCH_SIZE = 20
+KEEP_PROB = .8
+STOP_TOKEN_REWARD = 2
+TURN_OFF_TF_LOGGING = True
+USE_SPACY_NOT_GLOVE = True  # Use Spacy GloVe embeddings or Twitter Glove embeddings
+SHUFFLE_EXAMPLES = True
+SIMILARITY_LOSS_CONST = 0
+SAVE_VALIDATION_PREDICTIONS = True
+PRODUCE_OUTPUT_PREDICTIONS_FILE = False
+REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH = False  # Creates an unrealistic dataset with no cropping
+REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS = 0.0
+SEED = 'hello world'
+
+
 class LSTMBaselineModel:
-    def __init__(self, np_embedding, rnn_size, learning_rate, save_dir=None, restore_from_save=False):
-        self.np_embedding = np_embedding
+    def __init__(self, rnn_size, learning_rate, save_dir=None, restore_from_save=False):
         self.rnn_size = rnn_size
 
         self.tf_question_indices, self.tf_context_indices, self.tf_answer_indices, self.tf_answer_masks, self.tf_batch_size, \
-            self.tf_keep_prob, self.tf_predictions, self.tf_probabilities, self.tf_log_probabilities, self.tf_question_embs, self.tf_context_embs \
-            = self.build(self.np_embedding, self.rnn_size)
+            self.tf_keep_prob, self.tf_predictions, self.tf_probabilities, self.tf_log_probabilities, \
+            self.tf_question_embs, self.tf_context_embs, self.tf_embeddings \
+            = self.build(self.rnn_size)
 
         self.tf_total_loss = self.build_trainer(self.tf_log_probabilities, self.tf_answer_indices, self.tf_answer_masks)
 
@@ -35,18 +62,16 @@ class LSTMBaselineModel:
                     'predictions': self.tf_predictions,
                     'batch_size': self.tf_batch_size}
 
-    def build(self, np_embeddings, rnn_size):
+    def build(self, rnn_size):
         print('Loading embeddings into Tensorflow')
-        tf_embeddings = tf.Variable(np_embeddings, name='word_embeddings', dtype=tf.float32, trainable=False)
+        #tf_embeddings = tf.Variable(np_embeddings, name='word_embeddings', dtype=tf.float32, trainable=False)
+        tf_embeddings = tf.placeholder(dtype=tf.float32, shape=(None, config.GLOVE_EMB_SIZE), name='word_embeddings')
         print('Constructing placeholders')
-
         with tf.name_scope('PLACEHOLDERS'):
             tf_question_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_QUESTION_WORDS),
                                                  name='question_indices')
-            # tf_question_lengths = tf.placeholder(dtype=tf.int32, shape=(None), name='question_lengths')
             tf_context_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_CONTEXT_WORDS),
                                                 name='context_indices')
-            # tf_context_lengths = tf.placeholder(dtype=tf.int32, shape=(None), name='context_lengths')
             tf_answer_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_ANSWER_WORDS),
                                                name='answer_indices')
             tf_answer_masks = tf.placeholder(dtype=tf.float32, shape=(None, config.MAX_ANSWER_WORDS),
@@ -59,24 +84,11 @@ class LSTMBaselineModel:
             tf_question_embs_dropout = tf.nn.dropout(tf_question_embs, tf_keep_prob)
             tf_context_embs = tf.nn.embedding_lookup(tf_embeddings, tf_context_indices, name='context_embeddings')
             tf_context_embs_dropout = tf.nn.dropout(tf_context_embs, tf_keep_prob)
-        # Correct so far...
 
-        print('Question embeddings shape: %s' % str(tf_question_embs.shape))
-        print('Context embeddings shape: %s' % str(tf_context_embs.shape))
-
-        # Removed sequence lengths from question and context encoders
-
-        # Model
         with tf.variable_scope('QUESTION_ENCODER'):
             question_lstm = tf.contrib.rnn.LSTMCell(num_units=rnn_size)
             tf_question_outputs, tf_question_state = tf.nn.dynamic_rnn(question_lstm, tf_question_embs_dropout,
                                                                        sequence_length=None, dtype=tf.float32)
-
-        # tf_question_state_reshape = tf.reshape(tf_question_state, [-1, 1, RNN_HIDDEN_DIM])
-        # tf_question_state_tile = tf.tile(tf_question_state_reshape, [1, config.MAX_CONTEXT_WORDS, 1])
-        # tf_context_encoder_input = tf.concat([tf_context_embs, tf_question_state_tile], axis=2)
-        # assert tf_context_encoder_input.shape[1].value == config.MAX_CONTEXT_WORDS
-        # assert tf_context_encoder_input.shape[2].value == RNN_HIDDEN_DIM + config.GLOVE_EMB_SIZE
 
         with tf.variable_scope('CONTEXT_ENCODER'):
             context_lstm = tf.contrib.rnn.LSTMCell(num_units=rnn_size)
@@ -90,19 +102,16 @@ class LSTMBaselineModel:
                 Hr_backward = match_gru(tf_question_outputs, tf.reverse(tf_context_outputs, [1]), tf_batch_size, rnn_size)
             Hr = tf.concat([Hr_forward, tf.reverse(Hr_backward, [1])], axis=2)
             Hr_dropout = tf.nn.dropout(Hr, tf_keep_prob)
-
             Hr_tilda = tf.concat([tf.zeros([tf_batch_size, 1, rnn_size * 2]), Hr_dropout], axis=1,
                                  name='Hr_tilda')
 
         with tf.name_scope('OUTPUT'):
             tf_log_probabilities, all_hidden_states = pointer_net(Hr_tilda, tf_batch_size, rnn_size)
-
             tf_probabilities = tf.nn.softmax(tf_log_probabilities)
-
             tf_predictions = tf.argmax(tf_probabilities, axis=2, name='predictions')
 
         return tf_question_indices, tf_context_indices, tf_answer_indices, tf_answer_masks, tf_batch_size, \
-               tf_keep_prob, tf_predictions, tf_probabilities, tf_log_probabilities, tf_question_embs, tf_context_embs
+               tf_keep_prob, tf_predictions, tf_probabilities, tf_log_probabilities, tf_question_embs, tf_context_embs, tf_embeddings
 
     def build_trainer(self, tf_log_probabilities, tf_answer_indices, tf_answer_masks):
         # Calculate loss per each
@@ -126,10 +135,7 @@ class LSTMBaselineModel:
 
         return tf_total_loss
 
-    def __call__(self, features, num_batches):
-        pass
-
-    def train(self, np_questions, np_contexts, np_answers, np_answer_masks, batch_size, num_epochs, keep_prob, print_per_n_batches=20):
+    def train(self, np_embeddings, np_questions, np_contexts, np_answers, np_answer_masks, batch_size, num_epochs, keep_prob, print_per_n_batches=20):
         print('Training model...')
         all_train_predictions = []
         for epoch in range(num_epochs):
@@ -149,7 +155,8 @@ class LSTMBaselineModel:
                                                                        self.tf_answer_masks: np_answer_mask_batch,
                                                                        self.tf_context_indices: np_context_batch,
                                                                        self.tf_batch_size: batch_size,
-                                                                       self.tf_keep_prob: keep_prob})
+                                                                       self.tf_keep_prob: keep_prob,
+                                                                       self.tf_embeddings: np_embeddings})
                 accuracy, word_accuracy = sdt.compute_mask_accuracy(np_answer_batch,
                                                                     np_batch_predictions,
                                                                     np_answer_mask_batch)
@@ -179,6 +186,7 @@ class LSTMBaselineModel:
         return np_train_predictions
 
     def predict_on_examples(self,
+                            np_embeddings,
                             np_questions,
                             np_contexts,
                             batch_size):
@@ -204,7 +212,8 @@ class LSTMBaselineModel:
                                                                                :],
                                                         self.model_io['contexts']: np_contexts[
                                                                               current_start_index:current_end_index, :],
-                                                        self.model_io['batch_size']: effective_batch_size})
+                                                        self.model_io['batch_size']: effective_batch_size,
+                                                        self.tf_embeddings: np_embeddings})
             all_val_predictions.append(np_batch_val_predictions)
             all_val_probabilities.append(np_batch_val_probabilities)
         np_val_predictions = np.concatenate(all_val_predictions, axis=0)
@@ -386,4 +395,5 @@ def create_dense_layer(input_layer, input_size, output_size, activation=None, in
 class LSTMBaselineModelTest(unittest2.TestCase):
     def setUp(self):
         pass
+
 
