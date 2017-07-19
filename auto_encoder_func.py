@@ -168,10 +168,10 @@ class AutoEncoder:
             tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs_dropout, dtype=tf.float32)
             tf_last_output = tf_message_outputs[:, -1, :]
             tf_last_output_dropout = tf.nn.dropout(tf_last_output, tf_keep_prob)
-
-            tf_latent_mean, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, name='latent_mean')
-            tf_latent_log_std, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, name='latent_std',
-                                                                             activation='relu')
+            with tf.name_scope('latent_mean'):
+                tf_latent_mean, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size)
+            with tf.name_scope('latent_std'):
+                tf_latent_log_std, _, _ = baseline_model_func.create_dense_layer(tf_last_output_dropout, self.rnn_size, self.rnn_size, activation='relu')
             if include_epsilon:
                 tf_epsilon = tf.random_normal(tf.shape(tf_latent_mean), stddev=1, mean=0)
                 tf_sampled_latent = tf_latent_mean + tf.exp(tf_latent_log_std) * tf_epsilon
@@ -232,7 +232,7 @@ class AutoEncoder:
 def load_scope_from_save(save_dir, sess, scope):
     """Load the encoder model variables from checkpoint in save_dir.
     Store them in session sess."""
-    vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
-    assert len(vars) > 0
+    variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
+    assert len(variables) > 0
     baseline_model_func.restore_model_from_save(save_dir,
-                                                var_list=vars, sess=sess)
+                                                var_list=variables, sess=sess)

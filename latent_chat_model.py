@@ -19,10 +19,10 @@ NUM_EPOCHS = 100
 VALIDATE_INPUTS = False
 NUM_LAYERS = 80
 KEEP_PROB = .6
-RESTORE_FROM_SAVE = False
+RESTORE_FROM_SAVE = True
 
 parser = optparse.OptionParser()
-parser.add_option('-t', '--train', dest="train", default=True, help='train model for the specified number of epochs, and save')
+parser.add_option('-t', '--train', dest="train", default=False, help='train model for the specified number of epochs, and save')
 parser.add_option('-s', '--save_dir', dest="save_dir", default=config.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
 parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, help='specify number of epochs to train for')
 parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
@@ -132,16 +132,18 @@ np_mean_latent_response = np.mean(np_latent_response, axis=0)
 mean_latent_loss = np.mean(np.square(np_latent_response - np_mean_latent_response))
 print('Baseline mean latent loss (no access to input): %s' % mean_latent_loss)
 
-with tf.variable_scope('LATENT_CHAT_MODEL'):
+with tf.variable_scope('LATENT_CHAT_MODEL') as model_scope:
     tf_latent_message = tf.placeholder(tf.float32, shape=(None, aef.RNN_HIDDEN_DIM), name='latent_message')
     tf_latent_response = tf.placeholder(tf.float32, shape=(None, aef.RNN_HIDDEN_DIM), name='latent_response')
     tf_keep_prob = tf.placeholder_with_default(1.0, shape=(), name='keep_prob')
 
     tf_input = tf_latent_message
+
     for i in range(NUM_LAYERS):
         tf_input_dropout = tf.nn.dropout(tf_input, tf_keep_prob)
-        tf_relu, _, _ = baseline_model_func.create_dense_layer(tf_input_dropout, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation='relu', std=.001)
-        tf_output, _, _ = baseline_model_func.create_dense_layer(tf_relu, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation=None, std=.001)
+        tf_relu, tf_w1, tf_b1 = baseline_model_func.create_dense_layer(tf_input_dropout, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation='relu', std=.001)
+        print(tf_w1.name)
+        tf_output, tf_w2, tf_b2 = baseline_model_func.create_dense_layer(tf_relu, aef.RNN_HIDDEN_DIM, aef.RNN_HIDDEN_DIM, activation=None, std=.001)
         tf_input = tf_input + tf_output
 
     tf_latent_prediction = tf_input
@@ -152,6 +154,9 @@ train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(tf_total_loss)
 init = tf.global_variables_initializer()
 sess = tf.InteractiveSession()
 sess.run(init)
+
+variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='LATENT_CHAT_MODEL')
+assert len(variables) > 0
 
 if RESTORE_FROM_SAVE:
     print('Restoring from save...')

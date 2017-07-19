@@ -362,24 +362,23 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
 
 
 def create_dense_layer(input_layer, input_size, output_size, activation=None, include_bias=True, name=None, std=.1):
-    with tf.name_scope(name):
-        tf_w = tf.Variable(tf.random_normal([input_size, output_size], stddev=std))
-        tf_b = tf.Variable(tf.zeros([output_size]))
-        output_layer = tf.matmul(input_layer, tf_w)
-        if include_bias:
-            output_layer = output_layer + tf_b
-        if activation == 'relu':
-            output_layer = tf.nn.relu(output_layer)
-        elif activation == 'sigmoid':
-            output_layer = tf.nn.sigmoid(output_layer)
-        elif activation is None:
-            pass
-        else:
-            print('Error: Did not specify layer activation')
-
-    # regularizer = slim.l2_regularizer(reg_const)
-    # regularizer_loss = regularizer(tf_w) + regularizer(tf_b)
-    # slim.losses.add_loss(regularizer_loss)
+    """Creates dense layer without activation or with relu, sigmoid, or tanh activation. 'name' argument is deprecated
+    and unused."""
+    tf_w = tf.Variable(tf.random_normal([input_size, output_size], stddev=std))
+    tf_b = tf.Variable(tf.zeros([output_size]))
+    output_layer = tf.matmul(input_layer, tf_w)
+    if include_bias:
+        output_layer = output_layer + tf_b
+    if activation == 'relu':
+        output_layer = tf.nn.relu(output_layer)
+    elif activation == 'sigmoid':
+        output_layer = tf.nn.sigmoid(output_layer)
+    elif activation == 'tanh':
+        output_layer = tf.tanh(output_layer)
+    elif activation is None:
+        pass
+    else:
+        print('Error: Did not specify layer activation')
 
     return output_layer, tf_w, tf_b
 
