@@ -15,5 +15,6 @@ qa_model = baseline_model_func.LSTMBaselineModel(baseline_model_func.RNN_HIDDEN_
                                                  restore_from_save=True)
 
 for line in sys.stdin:
+    
     print(line)
 

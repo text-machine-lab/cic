@@ -91,10 +91,10 @@ class LatentChatModel:
         all_batch_responses = []
         for np_message_batch in latent_batch_gen.generate_batches():
             assert np_message_batch.shape[0] != 0
-            np_batch_response = self.sess.run([self.tf_latent_prediction],
+            np_batch_response = self.sess.run(self.tf_latent_prediction,
                 feed_dict={self.tf_latent_message: np_message_batch})
             all_batch_responses.append(np_batch_response)
-
+        #print(all_batch_responses[0].shape)
         np_model_latent_response = np.concatenate(all_batch_responses, axis=0)
 
         return np_model_latent_response
@@ -102,7 +102,7 @@ class LatentChatModel:
     def predict_string(self, your_message, nlp, vocab_dict, vocabulary):
         np_your_message = aef.convert_string_to_numpy(your_message, nlp, vocab_dict)
         np_your_latent_message = self.encoder.encode(np_your_message, aef.BATCH_SIZE)
-        np_model_latent_response = self.predict(np_your_latent_message, 1)
+        np_model_latent_response = self.predict(np_your_latent_message, aef.BATCH_SIZE)
         np_model_response = self.decoder.decode(np_model_latent_response, aef.BATCH_SIZE)
         model_response = sdt.convert_numpy_array_to_strings(np_model_response, vocabulary,
                                                             stop_token=aef.STOP_TOKEN,

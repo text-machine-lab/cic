@@ -15,12 +15,12 @@ import squad_dataset_tools as sdt
 from latent_chat_func import NUM_EXAMPLES, NUM_EPOCHS, VALIDATE_INPUTS
 
 parser = optparse.OptionParser()
-parser.add_option('-t', '--train', dest="train", default=False, help='train model for the specified number of epochs, and save')
+parser.add_option('-t', '--train', dest="train", default=False, action='store_true', help='train model for the specified number of epochs, and save')
 parser.add_option('-s', '--save_dir', dest="save_dir", default=config.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
 parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, help='specify number of epochs to train for')
 parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
-parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, help='load model parameters from specified save directory')
-parser.add_option('-b', '--bot', dest="bot", default=False, help='talk with chat bot')
+parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, action='store_true', help='load model parameters from specified save directory')
+parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='talk with chat bot')
 
 (options, args) = parser.parse_args()
 
