@@ -40,7 +40,7 @@ class AutoEncoder:
     learns an embedding per index."""
     def __init__(self, word_embedding_size, vocab_size, rnn_size, max_message_size,
                  encoder=True, decoder=True, learning_rate=None, save_dir=None, load_from_save=False,
-                 variational=True):
+                 variational=True, use_teacher_forcing=True):
         self.word_embedding_size = word_embedding_size
         self.encoder = encoder
         self.decoder = decoder
@@ -49,6 +49,7 @@ class AutoEncoder:
         self.vocab_size = vocab_size
         self.learning_rate = learning_rate
         self.save_dir = save_dir
+        self.use_teacher_forcing = use_teacher_forcing
 
         assert encoder or decoder
 
@@ -56,21 +57,22 @@ class AutoEncoder:
         self.tf_latent = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
         self.tf_keep_prob = tf.placeholder_with_default(1.0, (), name='keep_prob')
         self.tf_kl_const = tf.placeholder_with_default(1.0, (), name='kl_const')
-        self.tf_batch_size = tf.shape(self.tf_message)[0]
+        self.tf_is_training = tf.placeholder_with_default(False, (), name='model_is_training')
         with tf.variable_scope('LEARNED_EMBEDDINGS'):
             self.tf_learned_embeddings = tf.get_variable('learned_embeddings',
                                                          shape=[self.vocab_size, self.word_embedding_size],
                                                          initializer=tf.contrib.layers.xavier_initializer())
+            self.tf_message_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, self.tf_message, name='message_embeddings')
         if self.encoder:
             self.tf_latent_message, self.tf_latent_mean, self.tf_latent_log_std \
-                = self.build_encoder(self.tf_message, self.tf_keep_prob, include_epsilon=(self.decoder and variational))
+                = self.build_encoder(self.tf_message_embs, self.tf_keep_prob, include_epsilon=(self.decoder and variational))
         if self.decoder:
             if self.encoder:
                 decoder_input = self.tf_latent_message
             else:
                 decoder_input = self.tf_latent
             self.tf_message_prediction, self.tf_message_log_prob, self.tf_message_prob \
-                = self.build_decoder(decoder_input)
+                = self.build_decoder(decoder_input, self.tf_is_training, use_teacher_forcing=self.use_teacher_forcing)
         if self.decoder and self.encoder and self.learning_rate is not None:
             self.train_op, self.tf_output_loss, self.tf_kl_loss \
                 = self.build_trainer(self.tf_message_log_prob, self.tf_message,
@@ -147,7 +149,8 @@ class AutoEncoder:
                                                                                                    self.tf_kl_loss, self.tf_message_prediction],
                                                                                                    feed_dict={self.tf_message: np_message_batch,
                                                                                                               self.tf_keep_prob: keep_prob,
-                                                                                                              self.tf_kl_const: kl_const})
+                                                                                                              self.tf_kl_const: kl_const,
+                                                                                                              self.tf_is_training: True})
                 all_train_message_batches.append(np_batch_message_reconstruct)
                 per_print_batch_losses.append(batch_output_loss)
                 per_print_batch_kl_losses.append(batch_kl_loss)
@@ -160,10 +163,10 @@ class AutoEncoder:
         np_train_message_reconstruct = np.concatenate(all_train_message_batches, axis=0)
         return np_train_message_reconstruct
 
-    def build_encoder(self, tf_message, tf_keep_prob, include_epsilon=True):
+    def build_encoder(self, tf_message_embs, tf_keep_prob, include_epsilon=True):
         """Build encoder portion of autoencoder in Tensorflow."""
         with tf.variable_scope('MESSAGE_ENCODER'):
-            tf_message_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, tf_message, name='message_embeddings')
+
             tf_message_embs_dropout = tf.nn.dropout(tf_message_embs, tf_keep_prob)
 
             message_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
@@ -181,39 +184,61 @@ class AutoEncoder:
                 tf_sampled_latent = tf_latent_mean
         return tf_sampled_latent, tf_latent_mean, tf_latent_log_std
 
-    def build_decoder(self, tf_decoder_input, tf_message=None):
+    def build_decoder(self, tf_latent_input, tf_is_training, use_teacher_forcing=True):
         """Build decoder portion of autoencoder in Tensorflow."""
+        # USE_TEACHER_FORCING boolean is not yet implemented!!!
+        tf_latent_input_shape = tf.shape(tf_latent_input)
+        m = tf_latent_input_shape[0]
         with tf.variable_scope('MESSAGE_DECODER'):
             # tf_decoder_input_tile = tf.tile(tf.reshape(tf_decoder_input, [-1, 1, self.rnn_size]),
             #                                 [1, self.max_message_size, 1])
-            response_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
-            tf_hidden_state = response_lstm.zero_state(self.tf_batch_size, tf.float32)
-            all_outputs = []
-            for i in range(self.max_message_size):
-                tf_output, tf_hidden_state = response_lstm(tf_decoder_input, tf_hidden_state)
-                all_outputs.append(tf_output)
-            tf_response_outputs = tf.stack(all_outputs, axis=0)
-
-            # tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_lstm, tf_decoder_input_tile,
-            #                                                            dtype=tf.float32)
             output_weight = tf.get_variable('output_weight',
                                             shape=[self.rnn_size, self.word_embedding_size],
                                             initializer=tf.contrib.layers.xavier_initializer())
             output_bias = tf.get_variable('output_bias',
                                           shape=[self.word_embedding_size],
                                           initializer=tf.contrib.layers.xavier_initializer())
-            with tf.name_scope('tf_message_log_probabilities'):
-                tf_response_outputs_reshape = tf.reshape(tf_response_outputs, [-1, self.rnn_size])
-                tf_response_output_embs = tf.tanh(tf.matmul(tf_response_outputs_reshape, output_weight) + output_bias)
-                print(tf_response_output_embs.get_shape())
-                tf_flat_message_log_prob = tf.matmul(tf_response_output_embs, self.tf_learned_embeddings, transpose_b=True)
-                tf_message_log_prob = tf.reshape(tf_flat_message_log_prob, [-1, self.max_message_size, self.vocab_size])
 
-            tf_message_prob = tf.nn.softmax(tf_message_log_prob, name='message_probabilities')
+            tf_go_token = tf.get_variable('go_token', shape=[1, self.word_embedding_size])
+            tf_go_token_tile = tf.tile(tf_go_token, [m, 1])
 
-            tf_message_prediction = tf.argmax(tf_message_prob, axis=2)
+            response_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
+            tf_hidden_state = response_lstm.zero_state(m, tf.float32)
+            all_word_logits = []
+            all_word_probs = []
+            all_word_predictions = []
+            for i in range(self.max_message_size):
+                if i == 0:
+                    tf_teacher_signal = tf_go_token_tile  # give model stop token
+                else:
+                    tf_teacher_true_label = self.tf_message_embs[:, i - 1, :]  # @i=1, selects first label word
+                    tf_teacher_test_label = tf_word_prediction_embs
+                    tf_teacher_signal = tf.cond(tf_is_training,
+                                                lambda: tf_teacher_true_label,
+                                                lambda: tf_teacher_test_label)
+                if use_teacher_forcing:
+                    tf_decoder_input = tf.concat([tf_latent_input, tf_teacher_signal], axis=1)
+                else:
+                    tf_decoder_input = tf_latent_input
 
-        return tf_message_prediction, tf_message_log_prob, tf_message_prob
+                tf_output, tf_hidden_state = response_lstm(tf_decoder_input, tf_hidden_state)
+                tf_word_emb = tf.tanh(tf.matmul(tf_output, output_weight) + output_bias)
+                tf_word_logits = tf.matmul(tf_word_emb, self.tf_learned_embeddings, transpose_b=True)
+                tf_word_prob = tf.nn.softmax(tf_word_logits)
+                tf_word_prediction = tf.argmax(tf_word_logits, axis=1)
+
+                tf_word_prediction_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, tf_word_prediction)
+
+                all_word_logits.append(tf_word_logits)
+                all_word_probs.append(tf_word_prob)
+                all_word_predictions.append(tf_word_prediction)
+
+            with tf.name_scope('decoder_outputs'):
+                tf_message_logits = tf.stack(all_word_logits, axis=1)
+                tf_message_prob = tf.stack(all_word_probs, axis=1)
+                tf_message_prediction = tf.stack(all_word_predictions, axis=1)
+
+        return tf_message_prediction, tf_message_logits, tf_message_prob
 
     def build_trainer(self, tf_message_log_prob, tf_message, tf_latent_mean, tf_latent_log_std, learning_rate, variational=True):
         """Calculate loss function and construct optimizer op

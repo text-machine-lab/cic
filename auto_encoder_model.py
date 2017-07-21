@@ -29,6 +29,7 @@ parser.add_option('-s', '--save_dir', dest="save_dir", default=config.AUTO_ENCOD
 parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, help='specify number of epochs to train for')
 parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, action='store_true', help='load model parameters from specified save directory')
 parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='test reconstruction of autoencoder')
+parser.add_option('-f', '--teacher_force', dest='teacher_force', default=False, action='store_true', help='use teacher forcing in decoder')
 
 (options, args) = parser.parse_args()
 
@@ -36,6 +37,7 @@ if not options.train:
     NUM_EPOCHS = 0
 else:
     NUM_EPOCHS = int(options.num_epochs)
+
 config.AUTO_ENCODER_MODEL_SAVE_DIR = options.save_dir
 config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
 
@@ -137,7 +139,8 @@ with tf.Graph().as_default() as autoencoder_graph:
                                                  save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
                                                  load_from_save=RESTORE_FROM_SAVE,
                                                  learning_rate=LEARNING_RATE,
-                                                 variational=auto_encoder_func.VARIATIONAL)
+                                                 variational=auto_encoder_func.VARIATIONAL,
+                                                 use_teacher_forcing=options.use_teacher_force)
     if SAVE_TENSORBOARD_VISUALIZATION:
         baseline_model_func.create_tensorboard_visualization('chat')
 
@@ -173,7 +176,10 @@ print('Printing validation examples...')
 val_message_reconstruct = sdt.convert_numpy_array_to_strings(np_val_message_reconstruct, vocabulary,
                                                              stop_token=STOP_TOKEN,
                                                              keep_stop_token=True)
-
+print(num_val_messages)
+print(len(val_message_reconstruct))
+print(np_val_message_reconstruct.shape)
+print(np_val_messages.shape)
 num_validation_examples_correct = 0
 for index, message_reconstruct in enumerate(val_message_reconstruct):
     original_message = ' '.join(messages[num_train_messages + index])
@@ -189,17 +195,19 @@ with tf.Graph().as_default() as encoder_graph:
     encoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
                                             MAX_MESSAGE_LENGTH, encoder=True, decoder=False,
                                             save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
-                                            load_from_save=True,
+                                            load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
                                             learning_rate=LEARNING_RATE,
-                                            variational=auto_encoder_func.VARIATIONAL)
+                                            variational=auto_encoder_func.VARIATIONAL,
+                                            use_teacher_forcing=options.use_teacher_force)
 
 with tf.Graph().as_default() as decoder_graph:
     decoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
                                             MAX_MESSAGE_LENGTH, encoder=False, decoder=True,
                                             save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
-                                            load_from_save=True,
+                                            load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
                                             learning_rate=LEARNING_RATE,
-                                            variational=auto_encoder_func.VARIATIONAL)
+                                            variational=auto_encoder_func.VARIATIONAL,
+                                            use_teacher_forcing=options.use_teacher_force)
 
 if VALIDATE_ENCODER_AND_DECODER:
     np_val_latent = encoder.encode(np_val_messages, BATCH_SIZE)
