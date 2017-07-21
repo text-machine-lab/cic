@@ -24,6 +24,7 @@ USE_REDDIT_MESSAGES = False
 VARIATIONAL = True
 SEED = 'hello world'
 
+
 def convert_string_to_numpy(msg, nlp, vocab_dict):
     tk_message = nlp.tokenizer(msg.lower())
     tk_tokens = [str(token) for token in tk_message if str(token) != ' ' and str(token) in vocab_dict] + [STOP_TOKEN]
@@ -182,11 +183,11 @@ class AutoEncoder:
     def build_decoder(self, tf_decoder_input):
         """Build decoder portion of autoencoder in Tensorflow."""
         with tf.variable_scope('MESSAGE_DECODER'):
-            tf_message_final_output_tile = tf.tile(tf.reshape(tf_decoder_input, [-1, 1, self.rnn_size]),
+            tf_decoder_input_tile = tf.tile(tf.reshape(tf_decoder_input, [-1, 1, self.rnn_size]),
                                                    [1, self.max_message_size, 1])
 
             response_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
-            tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_lstm, tf_message_final_output_tile,
+            tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_lstm, tf_decoder_input_tile,
                                                                        dtype=tf.float32)
             output_weight = tf.get_variable('output_weight',
                                             shape=[self.rnn_size, self.word_embedding_size],

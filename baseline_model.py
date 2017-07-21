@@ -333,6 +333,8 @@ if PRINT_TRAINING_EXAMPLES and (TRAIN_MODEL_BEFORE_PREDICTION or PREDICT_ON_TRAI
         print('Answer mask: %s' % np.around(np_answer_masks[i, :], decimals=1))
 
 if PREDICT_ON_TRAINING_EXAMPLES or TRAIN_MODEL_BEFORE_PREDICTION:
+    print(np_answers[:val_index_start, :].shape)
+    print(np_train_predictions.shape)
     train_accuracy, train_word_accuracy = sdt.compute_mask_accuracy(np_answers[:val_index_start, :],
                                                         np_train_predictions,
                                                         np_answer_masks[:val_index_start, :])

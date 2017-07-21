@@ -18,7 +18,7 @@ KEEP_PROB = .6
 
 
 class LatentChatModel:
-    def __init__(self, vocab_size, learning_rate, save_dir, restore_from_save=False):
+    def __init__(self, vocab_size, learning_rate, save_dir, ae_save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR, restore_from_save=False):
         self.vocab_size = vocab_size
         self.learning_rate = learning_rate
         self.save_dir = save_dir
@@ -28,7 +28,7 @@ class LatentChatModel:
             self.encoder = aef.AutoEncoder(aef.LEARNED_EMBEDDING_SIZE, vocab_size,
                                       aef.RNN_HIDDEN_DIM,
                                       aef.MAX_MESSAGE_LENGTH, encoder=True, decoder=False,
-                                      save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                      save_dir=ae_save_dir,
                                       load_from_save=True,
                                       learning_rate=aef.LEARNING_RATE,
                                       variational=False)
@@ -37,7 +37,7 @@ class LatentChatModel:
             self.decoder = aef.AutoEncoder(aef.LEARNED_EMBEDDING_SIZE, vocab_size,
                                       aef.RNN_HIDDEN_DIM,
                                       aef.MAX_MESSAGE_LENGTH, encoder=False, decoder=True,
-                                      save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                      save_dir=ae_save_dir,
                                       load_from_save=True,
                                       learning_rate=aef.LEARNING_RATE,
                                       variational=False)

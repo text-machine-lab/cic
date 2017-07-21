@@ -4,31 +4,32 @@ import tensorflow as tf
 import config
 import numpy as np
 import squad_dataset_tools as sdt
+import chat_model_func
 
 
 LEARNING_RATE = .001
-NUM_PARAGRAPHS = 50
-RNN_HIDDEN_DIM = 400
+NUM_PARAGRAPHS = None
+RNN_HIDDEN_DIM = 600
 NUM_EXAMPLES_TO_PRINT = 40
 TRAIN_FRAC = 0.9
 VALIDATE_PROPER_INPUTS = True
 RESTORE_FROM_SAVE = True
-TRAIN_MODEL_BEFORE_PREDICTION = False
+TRAIN_MODEL_BEFORE_PREDICTION = True
 PREDICT_ON_TRAINING_EXAMPLES = False  # Predict on all training examples after training
-NUM_EPOCHS = 10
+NUM_EPOCHS = 50
 PRINT_TRAINING_EXAMPLES = True
 PRINT_VALIDATION_EXAMPLES = True
 PRINT_ACCURACY_EVERY_N_BATCHES = None
 BATCH_SIZE = 20
-KEEP_PROB = .8
-STOP_TOKEN_REWARD = 2
+KEEP_PROB = .6
+STOP_TOKEN_REWARD = 1
 TURN_OFF_TF_LOGGING = True
 USE_SPACY_NOT_GLOVE = True  # Use Spacy GloVe embeddings or Twitter Glove embeddings
 SHUFFLE_EXAMPLES = True
 SIMILARITY_LOSS_CONST = 0
 SAVE_VALIDATION_PREDICTIONS = True
 PRODUCE_OUTPUT_PREDICTIONS_FILE = False
-REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH = False  # Creates an unrealistic dataset with no cropping
+REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH = True  # Creates an unrealistic dataset with no cropping
 REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS = 0.0
 SEED = 'hello world'
 
@@ -63,7 +64,6 @@ class LSTMBaselineModel:
                     'batch_size': self.tf_batch_size}
 
     def build(self, rnn_size):
-        print('Loading embeddings into Tensorflow')
         #tf_embeddings = tf.Variable(np_embeddings, name='word_embeddings', dtype=tf.float32, trainable=False)
         tf_embeddings = tf.placeholder(dtype=tf.float32, shape=(None, config.GLOVE_EMB_SIZE), name='word_embeddings')
         print('Constructing placeholders')
@@ -144,19 +144,16 @@ class LSTMBaselineModel:
             accuracies = []
             word_accuracies = []
             frac_zeros = []
-            for i in range(num_epochs):
-                np_question_batch = np_questions[i * batch_size:i * batch_size + batch_size, :]
-                np_answer_batch = np_answers[i * batch_size:i * batch_size + batch_size, :]
-                np_answer_mask_batch = np_answer_masks[i * batch_size:i * batch_size + batch_size, :]
-                np_context_batch = np_contexts[i * batch_size:i * batch_size + batch_size, :]
+            batch_gen = chat_model_func.BatchGenerator([np_questions, np_contexts, np_answers, np_answer_masks], batch_size)
+            for np_question_batch, np_context_batch, np_answer_batch, np_answer_mask_batch in batch_gen.generate_batches():
                 np_batch_predictions, np_loss, _ = self.sess.run([self.tf_predictions, self.tf_total_loss, self.train_op],
-                                                            feed_dict={self.tf_question_indices: np_question_batch,
-                                                                       self.tf_answer_indices: np_answer_batch,
-                                                                       self.tf_answer_masks: np_answer_mask_batch,
-                                                                       self.tf_context_indices: np_context_batch,
-                                                                       self.tf_batch_size: batch_size,
-                                                                       self.tf_keep_prob: keep_prob,
-                                                                       self.tf_embeddings: np_embeddings})
+                                                                feed_dict={self.tf_question_indices: np_question_batch,
+                                                                           self.tf_answer_indices: np_answer_batch,
+                                                                           self.tf_answer_masks: np_answer_mask_batch,
+                                                                           self.tf_context_indices: np_context_batch,
+                                                                           self.tf_batch_size: batch_size,
+                                                                           self.tf_keep_prob: keep_prob,
+                                                                           self.tf_embeddings: np_embeddings})
                 accuracy, word_accuracy = sdt.compute_mask_accuracy(np_answer_batch,
                                                                     np_batch_predictions,
                                                                     np_answer_mask_batch)
@@ -165,8 +162,6 @@ class LSTMBaselineModel:
                 accuracies.append(accuracy)
                 word_accuracies.append(word_accuracy)
                 frac_zeros.append(frac_zero)
-                if print_per_n_batches is not None and i % print_per_n_batches == 0:
-                    print('Batch TRAIN EM Score: %s' % np.mean(accuracies))
                 losses.append(np_loss)
                 if epoch == num_epochs - 1:  # last epoch
                     all_train_predictions.append(np_batch_predictions)
