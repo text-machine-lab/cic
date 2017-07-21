@@ -56,6 +56,7 @@ class AutoEncoder:
         self.tf_latent = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
         self.tf_keep_prob = tf.placeholder_with_default(1.0, (), name='keep_prob')
         self.tf_kl_const = tf.placeholder_with_default(1.0, (), name='kl_const')
+        self.tf_batch_size = tf.shape(self.tf_message)[0]
         with tf.variable_scope('LEARNED_EMBEDDINGS'):
             self.tf_learned_embeddings = tf.get_variable('learned_embeddings',
                                                          shape=[self.vocab_size, self.word_embedding_size],
@@ -180,15 +181,21 @@ class AutoEncoder:
                 tf_sampled_latent = tf_latent_mean
         return tf_sampled_latent, tf_latent_mean, tf_latent_log_std
 
-    def build_decoder(self, tf_decoder_input):
+    def build_decoder(self, tf_decoder_input, tf_message=None):
         """Build decoder portion of autoencoder in Tensorflow."""
         with tf.variable_scope('MESSAGE_DECODER'):
-            tf_decoder_input_tile = tf.tile(tf.reshape(tf_decoder_input, [-1, 1, self.rnn_size]),
-                                                   [1, self.max_message_size, 1])
-
+            # tf_decoder_input_tile = tf.tile(tf.reshape(tf_decoder_input, [-1, 1, self.rnn_size]),
+            #                                 [1, self.max_message_size, 1])
             response_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
-            tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_lstm, tf_decoder_input_tile,
-                                                                       dtype=tf.float32)
+            tf_hidden_state = response_lstm.zero_state(self.tf_batch_size, tf.float32)
+            all_outputs = []
+            for i in range(self.max_message_size):
+                tf_output, tf_hidden_state = response_lstm(tf_decoder_input, tf_hidden_state)
+                all_outputs.append(tf_output)
+            tf_response_outputs = tf.stack(all_outputs, axis=0)
+
+            # tf_response_outputs, tf_response_state = tf.nn.dynamic_rnn(response_lstm, tf_decoder_input_tile,
+            #                                                            dtype=tf.float32)
             output_weight = tf.get_variable('output_weight',
                                             shape=[self.rnn_size, self.word_embedding_size],
                                             initializer=tf.contrib.layers.xavier_initializer())

@@ -19,34 +19,28 @@ import config
 import movie_dialogue_dataset_tools as mddt
 import squad_dataset_tools as sdt
 from auto_encoder_func import MAX_MESSAGE_LENGTH, MAX_NUMBER_OF_MESSAGES, STOP_TOKEN, RNN_HIDDEN_DIM, \
-    LEARNED_EMBEDDING_SIZE, LEARNING_RATE, KEEP_PROB, RESTORE_FROM_SAVE, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
+    LEARNED_EMBEDDING_SIZE, LEARNING_RATE, KEEP_PROB, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
     NUM_EXAMPLES_TO_PRINT, VALIDATE_ENCODER_AND_DECODER, SAVE_TENSORBOARD_VISUALIZATION, SHUFFLE_EXAMPLES
 
 # ARGUMENTS ############################################################################################################
-
-if len(sys.argv) >= 2:
-    if sys.argv[1] == 'predict':
-        print('Predicting...')
-        NUM_EPOCHS = 0
-        RESTORE_FROM_SAVE = True
-    elif sys.argv[1] == 'train':
-        print('Training...')
-        if len(sys.argv) > 3:
-            auto_encoder_func.NUM_EPOCHS = int(sys.argv[2])
-        auto_encoder_func.RESTORE_FROM_SAVE = False
-
 parser = optparse.OptionParser()
-parser.add_option('-t', '--train', dest="train", default=True, help='train model for the specified number of epochs, and save')
+parser.add_option('-t', '--train', dest="train", default=False, action='store_true', help='train model for the specified number of epochs, and save')
 parser.add_option('-s', '--save_dir', dest="save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
 parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, help='specify number of epochs to train for')
+parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, action='store_true', help='load model parameters from specified save directory')
+parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='test reconstruction of autoencoder')
 
 (options, args) = parser.parse_args()
 
 if not options.train:
     NUM_EPOCHS = 0
+else:
+    NUM_EPOCHS = int(options.num_epochs)
 config.AUTO_ENCODER_MODEL_SAVE_DIR = options.save_dir
 config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
-NUM_EPOCHS = int(options.num_epochs)
+
+
+RESTORE_FROM_SAVE = options.restore_from_save
 
 print('Number of epochs: %s' % NUM_EPOCHS)
 print('Save directory: %s' % config.AUTO_ENCODER_MODEL_SAVE_DIR)
@@ -219,46 +213,46 @@ if VALIDATE_ENCODER_AND_DECODER:
 
 
 
+if options.bot:
+    print('Test the autoencoder!')
+    while(True):
+        print('Would you like to test individual messages, or test the space? (individual/space/neither)')
+        choice = input()
+        if choice == 'individual':
+            while True:
+                your_message = input('Message: ')
+                if your_message == 'exit':
+                    break
+                np_your_message = auto_encoder_func.convert_string_to_numpy(your_message, nlp, vocab_dict)
+                np_your_message_reconstruct = auto_encoder.reconstruct(np_your_message, 1)
+                your_message_reconstruct = sdt.convert_numpy_array_to_strings(np_your_message_reconstruct, vocabulary,
+                                                                              stop_token=STOP_TOKEN,
+                                                                              keep_stop_token=True)
+                print('Reconstruction: %s' % your_message_reconstruct[0])
 
-print('Test the autoencoder!')
-while(True):
-    print('Would you like to test individual messages, or test the space? (individual/space/neither)')
-    choice = input()
-    if choice == 'individual':
-        while True:
-            your_message = input('Message: ')
-            if your_message == 'exit':
-                break
-            np_your_message = auto_encoder_func.convert_string_to_numpy(your_message, nlp, vocab_dict)
-            np_your_message_reconstruct = auto_encoder.reconstruct(np_your_message, 1)
-            your_message_reconstruct = sdt.convert_numpy_array_to_strings(np_your_message_reconstruct, vocabulary,
-                                                                          stop_token=STOP_TOKEN,
-                                                                          keep_stop_token=True)
-            print('Reconstruction: %s' % your_message_reconstruct[0])
+        if choice == 'space':
+            while True:
+                wish_to_continue = input('Continue? (y/n)')
+                if wish_to_continue != 'y' and wish_to_continue != 'yes':
+                    break
+                num_increments = int(input('Number of INCREMENTS: '))
+                first_message = input('First message: ')
+                second_message = input('Second message: ')
+                np_first_message = auto_encoder_func.convert_string_to_numpy(first_message, nlp, vocab_dict)
+                np_second_message = auto_encoder_func.convert_string_to_numpy(second_message, nlp, vocab_dict)
+                np_first_latent = encoder.encode(np_first_message, BATCH_SIZE)
+                np_second_latent = encoder.encode(np_second_message, BATCH_SIZE)
+                np_increment = (np_first_latent - np_second_latent) / num_increments
+                for i in range(num_increments + 1):
+                    np_new_latent = np_second_latent + i * np_increment
+                    np_new_message = decoder.decode(np_new_latent, BATCH_SIZE)
+                    new_message = sdt.convert_numpy_array_to_strings(np_new_message, vocabulary,
+                                                                     stop_token=STOP_TOKEN,
+                                                                     keep_stop_token=True)[0]
+                    print('Increment %s: %s' % (i, new_message))
 
-    if choice == 'space':
-        while True:
-            wish_to_continue = input('Continue? (y/n)')
-            if wish_to_continue != 'y' and wish_to_continue != 'yes':
-                break
-            num_increments = int(input('Number of INCREMENTS: '))
-            first_message = input('First message: ')
-            second_message = input('Second message: ')
-            np_first_message = auto_encoder_func.convert_string_to_numpy(first_message, nlp, vocab_dict)
-            np_second_message = auto_encoder_func.convert_string_to_numpy(second_message, nlp, vocab_dict)
-            np_first_latent = encoder.encode(np_first_message, BATCH_SIZE)
-            np_second_latent = encoder.encode(np_second_message, BATCH_SIZE)
-            np_increment = (np_first_latent - np_second_latent) / num_increments
-            for i in range(num_increments + 1):
-                np_new_latent = np_second_latent + i * np_increment
-                np_new_message = decoder.decode(np_new_latent, BATCH_SIZE)
-                new_message = sdt.convert_numpy_array_to_strings(np_new_message, vocabulary,
-                                                                 stop_token=STOP_TOKEN,
-                                                                 keep_stop_token=True)[0]
-                print('Increment %s: %s' % (i, new_message))
-
-    if choice == 'neither':
-        break
+        if choice == 'neither':
+            break
 
 
 
