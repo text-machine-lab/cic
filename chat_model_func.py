@@ -42,14 +42,16 @@ class BatchGenerator:
             if real_batch_size == 0:
                 break
 
-            batch = [np_data[real_batch_size*batch_index:real_batch_size*batch_index+real_batch_size] for np_data in self.datas]
+            batch = [np_data[self.batch_size*batch_index:self.batch_size*batch_index+real_batch_size] for np_data in self.datas]
             if len(batch) > 1:
                 yield batch
             else:
                 yield batch[0]
 
 
-def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=True, verbose=True, keep_duplicates=False, seed='hello world'):
+def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=True, verbose=True,
+                                         keep_duplicates=False, seed='hello world',
+                                         max_message_length=MAX_MESSAGE_LENGTH):
     """All preprocessing of conversational data for chat_model.py. This function is also
     intended to be used by latent_chat_model.py"""
     # seed so that train and validation examples don't get blended together.
@@ -90,7 +92,7 @@ def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=Tr
         print('Vocabulary size: %s' % vocabulary_length)
 
     examples = mddt.construct_examples_from_conversations_and_messages(conversations, id_to_message,
-                                                                       max_message_length=MAX_MESSAGE_LENGTH)
+                                                                       max_message_length=max_message_length)
 
     if verbose:
         print('Creating examples...')
@@ -127,7 +129,7 @@ def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=Tr
 
     if verbose:
         print('Constructing input numpy arrays...')
-    np_message, np_response = construct_numpy_from_examples(examples, vocab_dict, MAX_MESSAGE_LENGTH)
+    np_message, np_response = construct_numpy_from_examples(examples, vocab_dict, max_message_length)
     if verbose:
         print('Validating inputs...')
     message_reconstruct = sdt.convert_numpy_array_to_strings(np_message, vocabulary)
@@ -138,9 +140,9 @@ def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=Tr
         # print(message_reconstruct[i])
         # print(response_reconstruct[i])
 
-        if len(examples[i][0]) <= MAX_MESSAGE_LENGTH:
+        if len(examples[i][0]) <= max_message_length:
             assert each_message == message_reconstruct[i]
-        if len(examples[i][1]) <= MAX_MESSAGE_LENGTH:
+        if len(examples[i][1]) <= max_message_length:
             assert each_response == response_reconstruct[i]
 
     if reverse_inputs:

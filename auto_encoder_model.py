@@ -29,7 +29,9 @@ parser.add_option('-s', '--save_dir', dest="save_dir", default=config.AUTO_ENCOD
 parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, help='specify number of epochs to train for')
 parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, action='store_true', help='load model parameters from specified save directory')
 parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='test reconstruction of autoencoder')
-parser.add_option('-f', '--teacher_force', dest='teacher_force', default=False, action='store_true', help='use teacher forcing in decoder')
+#parser.add_option('-f', '--teacher_force', dest='teacher_force', default=False, action='store_true', help='use teacher forcing in decoder')
+parser.add_option('-v', '--variational', dest='variational', default=False, action='store_true', help='use variational loss')
+parser.add_option('-m', '--max_messages', dest='max_messages', default=MAX_NUMBER_OF_MESSAGES, help='specify maximum number of messages to train and test on')
 
 (options, args) = parser.parse_args()
 
@@ -41,12 +43,14 @@ else:
 config.AUTO_ENCODER_MODEL_SAVE_DIR = options.save_dir
 config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
 
+if options.max_messages is not None:
+    MAX_NUMBER_OF_MESSAGES = int(options.max_messages)
 
+auto_encoder_func.VARIATIONAL = options.variational
 RESTORE_FROM_SAVE = options.restore_from_save
 
 print('Number of epochs: %s' % NUM_EPOCHS)
 print('Save directory: %s' % config.AUTO_ENCODER_MODEL_SAVE_DIR)
-
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -140,7 +144,7 @@ with tf.Graph().as_default() as autoencoder_graph:
                                                  load_from_save=RESTORE_FROM_SAVE,
                                                  learning_rate=LEARNING_RATE,
                                                  variational=auto_encoder_func.VARIATIONAL,
-                                                 use_teacher_forcing=options.use_teacher_force)
+                                                 use_teacher_forcing=options.teacher_force)
     if SAVE_TENSORBOARD_VISUALIZATION:
         baseline_model_func.create_tensorboard_visualization('chat')
 
@@ -155,13 +159,16 @@ if NUM_EPOCHS > 0:
     train_message_reconstruct = sdt.convert_numpy_array_to_strings(np_train_message_reconstruct, vocabulary,
                                                                    stop_token=STOP_TOKEN,
                                                                    keep_stop_token=True)
+    assert np_train_messages.shape[0] == len(train_message_reconstruct)
+    assert len(train_message_reconstruct) == num_train_messages
+
     num_train_examples_correct = 0
     for index, message_reconstruct in enumerate(train_message_reconstruct):
         original_message = ' '.join(messages[index])
-        if index < NUM_EXAMPLES_TO_PRINT:
-            print(message_reconstruct, '\t\t\t|||', original_message)
         if message_reconstruct == original_message:
             num_train_examples_correct += 1
+            #if index < NUM_EXAMPLES_TO_PRINT:
+        print(message_reconstruct, '\t\t\t|||', original_message)
 
     print('Training EM Accuracy: %s' % (num_train_examples_correct / num_train_messages))
 
@@ -198,7 +205,7 @@ with tf.Graph().as_default() as encoder_graph:
                                             load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
                                             learning_rate=LEARNING_RATE,
                                             variational=auto_encoder_func.VARIATIONAL,
-                                            use_teacher_forcing=options.use_teacher_force)
+                                            use_teacher_forcing=options.teacher_force)
 
 with tf.Graph().as_default() as decoder_graph:
     decoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
@@ -207,7 +214,7 @@ with tf.Graph().as_default() as decoder_graph:
                                             load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
                                             learning_rate=LEARNING_RATE,
                                             variational=auto_encoder_func.VARIATIONAL,
-                                            use_teacher_forcing=options.use_teacher_force)
+                                            use_teacher_forcing=options.teacher_force)
 
 if VALIDATE_ENCODER_AND_DECODER:
     np_val_latent = encoder.encode(np_val_messages, BATCH_SIZE)

@@ -8,13 +8,13 @@ import squad_dataset_tools as sdt
 import chat_model_func
 
 
-LEARNING_RATE = .0001
+LEARNING_RATE = .0005
 NUM_EXAMPLES = None
 BATCH_SIZE = 20
 NUM_EPOCHS = 100
-VALIDATE_INPUTS = False
-NUM_LAYERS = 80
-KEEP_PROB = .6
+VALIDATE_INPUTS = True
+NUM_LAYERS = 50
+KEEP_PROB = 1
 
 
 class LatentChatModel:

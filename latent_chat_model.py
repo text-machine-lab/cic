@@ -21,6 +21,8 @@ parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, h
 parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
 parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, action='store_true', help='load model parameters from specified save directory')
 parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='talk with chat bot')
+#parser.add_option('-f', '--teacher_force', dest='teacher_force', default=False, action='store_true', help='use teacher forcing in decoder')
+parser.add_option('-v', '--variational', dest='variational', default=False, action='store_true', help='use variational loss')
 
 (options, args) = parser.parse_args()
 
@@ -30,6 +32,8 @@ else:
     NUM_EPOCHS = int(options.num_epochs)
 config.LATENT_CHAT_MODEL_SAVE_DIR = options.save_dir
 RESTORE_FROM_SAVE = options.restore_from_save
+
+aef.VARIATIONAL = options.variational
 
 config.AUTO_ENCODER_MODEL_SAVE_DIR = options.auto_encoder_save_dir
 config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
@@ -44,7 +48,8 @@ nlp = spacy.load('en')
 
 examples, np_message, np_response, vocab_dict, vocabulary = chat_model_func.preprocess_all_cornell_conversations(nlp,
                                                                                                                  vocab_dict=vocab_dict,
-                                                                                                                 reverse_inputs=False)
+                                                                                                                 reverse_inputs=False,
+                                                                                                                 max_message_length=aef.MAX_MESSAGE_LENGTH)
 
 if NUM_EXAMPLES is not None:
     examples = examples[:NUM_EXAMPLES]
@@ -63,6 +68,7 @@ num_examples = len(examples)
 
 lcm = latent_chat_func.LatentChatModel(len(vocab_dict), latent_chat_func.LEARNING_RATE,
                                        config.LATENT_CHAT_MODEL_SAVE_DIR,
+                                       ae_save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
                                        restore_from_save=RESTORE_FROM_SAVE)
 
 print('Converting messages into latent space')

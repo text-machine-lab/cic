@@ -4,13 +4,13 @@ import baseline_model_func
 import chat_model_func
 import numpy as np
 
-MAX_MESSAGE_LENGTH = 10
+MAX_MESSAGE_LENGTH = 20
 MAX_NUMBER_OF_MESSAGES = None
 STOP_TOKEN = '<STOP>'
 DELIMITER = ' +++$+++ '
-RNN_HIDDEN_DIM = 1500
+RNN_HIDDEN_DIM = 400
 LEARNED_EMBEDDING_SIZE = 200
-LEARNING_RATE = .0006
+LEARNING_RATE = .0005
 KEEP_PROB = .9
 RESTORE_FROM_SAVE = False
 BATCH_SIZE = 20
@@ -22,6 +22,7 @@ SAVE_TENSORBOARD_VISUALIZATION = False
 SHUFFLE_EXAMPLES = True
 USE_REDDIT_MESSAGES = False
 VARIATIONAL = True
+REVERSE_INPUT_MESSAGES = True
 SEED = 'hello world'
 
 
@@ -53,7 +54,7 @@ class AutoEncoder:
 
         assert encoder or decoder
 
-        self.tf_message = tf.placeholder(dtype=tf.int32, shape=[None, self.max_message_size], name='input_message')
+        self.tf_message = tf.placeholder_with_default(tf.zeros([1, self.max_message_size], dtype=tf.int32), [None, self.max_message_size], name='input_message')
         self.tf_latent = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
         self.tf_keep_prob = tf.placeholder_with_default(1.0, (), name='keep_prob')
         self.tf_kl_const = tf.placeholder_with_default(1.0, (), name='kl_const')
@@ -167,6 +168,9 @@ class AutoEncoder:
         """Build encoder portion of autoencoder in Tensorflow."""
         with tf.variable_scope('MESSAGE_ENCODER'):
 
+            if REVERSE_INPUT_MESSAGES:
+                tf_message_embs = tf.reverse(tf_message_embs, axis=[1], name='reverse_message_embs')
+
             tf_message_embs_dropout = tf.nn.dropout(tf_message_embs, tf_keep_prob)
 
             message_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
@@ -209,7 +213,7 @@ class AutoEncoder:
             all_word_predictions = []
             for i in range(self.max_message_size):
                 if i == 0:
-                    tf_teacher_signal = tf_go_token_tile  # give model stop token
+                    tf_teacher_signal = tf_go_token_tile  # give model go token
                 else:
                     tf_teacher_true_label = self.tf_message_embs[:, i - 1, :]  # @i=1, selects first label word
                     tf_teacher_test_label = tf_word_prediction_embs
