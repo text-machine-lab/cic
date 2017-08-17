@@ -144,7 +144,7 @@ with tf.Graph().as_default() as autoencoder_graph:
                                                  load_from_save=RESTORE_FROM_SAVE,
                                                  learning_rate=LEARNING_RATE,
                                                  variational=auto_encoder_func.VARIATIONAL,
-                                                 use_teacher_forcing=options.teacher_force)
+                                                 use_teacher_forcing=True)
     if SAVE_TENSORBOARD_VISUALIZATION:
         baseline_model_func.create_tensorboard_visualization('chat')
 
