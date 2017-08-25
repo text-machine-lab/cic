@@ -8,13 +8,14 @@ import squad_dataset_tools as sdt
 import chat_model_func
 
 
-LEARNING_RATE = .001
+LEARNING_RATE = .000001
 NUM_EXAMPLES = None
 BATCH_SIZE = 20
 NUM_EPOCHS = 100
 VALIDATE_INPUTS = False
 NUM_LAYERS = 50
-KEEP_PROB = .95
+KEEP_PROB = .7
+CALCULATE_TRAIN_ACCURACY = True
 
 
 class LatentChatModel:
@@ -73,14 +74,21 @@ class LatentChatModel:
             input_size = aef.RNN_HIDDEN_DIM + padding_size
 
             for i in range(num_layers):
-                tf_input_dropout = tf.nn.dropout(tf_input, tf_keep_prob)
-                tf_relu, tf_w1, tf_b1 = baseline_model_func.create_dense_layer(tf_input_dropout, input_size,
-                                                                               input_size, activation='relu',
-                                                                               std=.0001)
-                tf_output, tf_w2, tf_b2 = baseline_model_func.create_dense_layer(tf_relu, input_size,
-                                                                                 input_size, activation=None,
-                                                                                 std=.0001)
-                tf_input = tf_input + tf_output
+                with tf.variable_scope('RESIDUAL_' + str(i)):
+                    tf_input_dropout = tf.nn.dropout(tf_input, tf_keep_prob)
+                    with tf.variable_scope('INPUT_LAYER'):
+                        tf_relu, tf_w1, tf_b1 = baseline_model_func.create_dense_layer(tf_input_dropout, input_size,
+                                                                                       input_size,
+                                                                                       use_xavier=True,
+                                                                                       activation='relu',
+                                                                                       std=.0001)
+                    with tf.variable_scope('OUTPUT_LAYER'):
+                        tf_output, tf_w2, tf_b2 = baseline_model_func.create_dense_layer(tf_relu, input_size,
+                                                                                         input_size,
+                                                                                         use_xavier=True,
+                                                                                         activation=None,
+                                                                                         std=.0001)
+                    tf_input = tf_input + tf_output
 
             tf_latent_prediction = tf_input[:, :aef.RNN_HIDDEN_DIM]
 

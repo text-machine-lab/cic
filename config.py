@@ -18,6 +18,7 @@ VALIDATION_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'predictions.pkl')
 SUBMISSION_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'final_predictions.json')
 REDDIT_CRAWLER_CREDENTIALS = os.path.join(DATA_DIR, 'creds.txt')
 REDDIT_COMMENTS_DUMP = os.path.join(DATA_DIR, 'reddit_comments_dump')
+LATENT_CHAT_PRE_PROCESSING_DUMP = os.path.join(DATA_DIR, 'latent_chat_preproc_dump.pkl')
 
 # CONSTANTS
 MAX_QUESTION_WORDS = 10

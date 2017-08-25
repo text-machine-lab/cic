@@ -365,11 +365,15 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
     return tf_probabilities, all_hidden_states
 
 
-def create_dense_layer(input_layer, input_size, output_size, activation=None, include_bias=True, name=None, std=.1):
+def create_dense_layer(input_layer, input_size, output_size, use_xavier=False, activation=None, include_bias=True, name=None, std=.1):
     """Creates dense layer without activation or with relu, sigmoid, or tanh activation. 'name' argument is deprecated
     and unused."""
-    tf_w = tf.Variable(tf.random_normal([input_size, output_size], stddev=std))
-    tf_b = tf.Variable(tf.zeros([output_size]))
+    if use_xavier:
+        tf_w = tf.get_variable('w', (input_size, output_size), initializer=tf.random_normal_initializer(stddev=std))
+        tf_b = tf.get_variable('b', (output_size,), initializer=tf.random_normal_initializer(stddev=std))
+    else:
+        tf_w = tf.Variable(tf.random_normal([input_size, output_size], stddev=std))
+        tf_b = tf.Variable(tf.zeros([output_size]))
     output_layer = tf.matmul(input_layer, tf_w)
     if include_bias:
         output_layer = output_layer + tf_b
