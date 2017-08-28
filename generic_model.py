@@ -224,7 +224,7 @@ class SimpleModel(GenericModel):
 class LessSimpleModel(GenericModel):
     def build(self):
         tf_input = tf.placeholder(tf.float32, shape=(None, 1), name='x')
-        tf_w = tf.get_variable('w', (), initializer=tf.contrib.layers.xavier_initializer())
+        tf_w = tf.get_variable('w', (1, 1), initializer=tf.contrib.layers.xavier_initializer())
         tf_output = tf_input + tf_w
         self.input_placeholders['x'] = tf_input
         self.output_tensors['y'] = tf_output
@@ -243,7 +243,7 @@ class GenericModelTest(unittest2.TestCase):
         pass
 
     def test_simple_model_creation(self):
-        sm = SimpleModel('/tmp/sm_save/', 'sm')
+        SimpleModel('/tmp/sm_save/', 'sm')
 
     def test_simple_model_prediction(self):
         sm = SimpleModel('/tmp/sm_save/', 'sm')
@@ -258,3 +258,9 @@ class GenericModelTest(unittest2.TestCase):
         output_dict = sm.train({'x': np.array([[3], [4]])}, num_epochs=10, save_per_epoch=False)
 
         assert np.array_equal(output_dict['y'], np.array([[6.], [7.]]))
+
+    def test_less_simple_model_train(self):
+        lsm = LessSimpleModel('/tmp/lsm_save/', 'lsm')
+
+        output_dict = lsm.train({'x': np.array([[3]]), 'label': np.array([[6]])}, num_epochs=100, save_per_epoch=False)
+        print(output_dict)
