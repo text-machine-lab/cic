@@ -8,13 +8,13 @@ import squad_dataset_tools as sdt
 import chat_model_func
 
 
-LEARNING_RATE = .000001
+LEARNING_RATE = .0001
 NUM_EXAMPLES = None
 BATCH_SIZE = 20
 NUM_EPOCHS = 100
 VALIDATE_INPUTS = False
-NUM_LAYERS = 50
-KEEP_PROB = .7
+NUM_LAYERS = 20
+KEEP_PROB = .9
 CALCULATE_TRAIN_ACCURACY = True
 
 
