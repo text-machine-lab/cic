@@ -1,6 +1,7 @@
 """This is a generic parent class for Tensorflow models. This file should be stand-alone."""
 import tensorflow as tf
 import numpy as np
+import unittest2
 from abc import ABC, abstractmethod
 
 
@@ -39,8 +40,10 @@ def load_scope_from_save(save_dir, sess, scope):
 class BatchGenerator:
     def __init__(self, datas, batch_size):
         if isinstance(datas, list):
+            self.is_only_one_data = False
             self.datas = datas
         else:
+            self.is_only_one_data = True
             self.datas = [datas]
         self.batch_size = batch_size
 
@@ -57,54 +60,201 @@ class BatchGenerator:
                 break
 
             batch = [np_data[self.batch_size*batch_index:self.batch_size*batch_index+real_batch_size] for np_data in self.datas]
-            if len(batch) > 1:
+            if not self.is_only_one_data:
                 yield batch
             else:
                 yield batch[0]
 
 
 class GenericModel(ABC):
-    def __init__(self, save_dir, restore_from_save=False, params=None):
-        # Here, inputs means placeholders and outputs means tensors of interest
-        self.params = params
-        self.model_inputs, self.model_outputs, self.load_scopes = self.build()
-        self.train_ops = self.build_trainer()
-        create_tensorboard_visualization(self.__name__)
+    def __init__(self, save_dir, tensorboard_name, restore_from_save=False, **kwargs):
+        # Generic model which allows for automatic saving/loading, Tensorboard visualizations,
+        # batch size control, session and initialization handling, and more.
+        self.params = kwargs
+        self.save_dir = save_dir
+        self.tensorboard_name = tensorboard_name
+        self.load_scopes = []
+        self.input_placeholders = {}
+        self.output_tensors = {}
+        self.train_ops = {}
+        self.build()
+        self.build_trainer()
+        create_tensorboard_visualization(self.tensorboard_name)
         self.init = tf.global_variables_initializer()
         self.sess = tf.InteractiveSession()
         self.sess.run(self.init)
+        if len(tf.trainable_variables()) > 0:
+            self.saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
+        else:
+            self.saver = None
         if restore_from_save:
-            load_scope_from_save(save_dir, self.sess, self.load_scopes)
+            for each_scope in self.load_scopes:
+                load_scope_from_save(self.save_dir, self.sess, each_scope)
 
     @abstractmethod
     def build(self):
+        # Implement model and specify model placeholders and output tensors you wish to evaluate
+        # using self.input_placeholders and self.output_tensors dictionaries.
+        # Specify each entry as a name:tensor pair.
+
         pass
 
     @abstractmethod
     def build_trainer(self):
+        # Implement trainer for model and specify loss functions. Use loss functions to
+        # create train ops. Add these train ops to the dictionary as name:op entries
+
         pass
 
-    def train(self, inputs, outputs, labels, num_epochs, batch_size):
-        ### NOT IMPLEMENTED!!!!
-        for epoch in range(num_epochs):
-            print('Epoch: %s' % epoch)
-            per_print_losses = []
-            batch_gen = BatchGenerator([np_latent_message, np_latent_response], batch_size)
-
-            for np_message_batch, np_response_batch in latent_batch_gen.generate_batches():
-                assert np_message_batch.shape[0] != 0
-                np_batch_loss, np_batch_response, _ = self.sess.run([self.tf_total_loss, self.tf_latent_prediction, self.train_op],
-                                                               feed_dict={self.tf_latent_message: np_message_batch,
-                                                                          self.tf_latent_response: np_response_batch,
-                                                                          self.tf_keep_prob: keep_prob})
-                per_print_losses.append(np_batch_loss)
-
-            print('Message std: %s' % np.std(np_message_batch))
-            print('Response std: %s' % np.std(np_response_batch))
-            print('Prediction std: %s' % np.std(np_batch_response))
-            print('Loss: %s' % np.mean(per_print_losses))
-            self.saver.save(self.sess, self.save_dir, global_step=epoch)
-
-    def predict(self, inputs, outputs, batch_size):
+    def action_per_epoch(self, all_feed_dicts, output_tensor_dict, epoch_index, is_training, **kwargs):
+        # Optional: Define action to take place at the end of every epoch. Can use this
+        # for printing accuracy, saving statistics, etc. If is_training=False, we are using the model for
+        # prediction. Check for this.
+        np.mean(output_tensor_dict['loss'])
         pass
 
+    def action_per_batch(self, all_feed_dicts, all_output_batch_dicts, epoch_index, batch_index, is_training, **kwargs):
+        # Optional: Define action to take place at the end of every batch. Can use this
+        # for printing accuracy, saving statistics, etc. If is_training=False, we are using the model for
+        # prediction. Check for this.
+        pass
+
+    def action_before_training(self, placeholder_dict, num_epochs, output_tensor_names=None, batch_size=32, train_op_names=None, save_per_epoch=True, **kwargs):
+        # Optional: Define action to take place at the beginning of training, once. This could be used to set output_tensor_names so that certain ops always
+        # execute, as needed for other action functions.
+        pass
+
+    def train(self, placeholder_dict, num_epochs, output_tensor_names=None, batch_size=32, train_op_names=None, save_per_epoch=True, **kwargs):
+
+        self.action_before_training(placeholder_dict, num_epochs, output_tensor_names=output_tensor_names,
+                                    batch_size=batch_size, train_op_names=train_op_names,
+                                    save_per_epoch=save_per_epoch, **kwargs)
+
+        placeholder_names = []
+        placeholder_numpys = []
+        for each_name in placeholder_dict:
+            placeholder_names.append(each_name)
+            placeholder_numpys.append(placeholder_dict[each_name])
+
+        is_training = True
+
+        # Specify training ops to run
+        train_op_list = []
+        if train_op_names is None:
+            # Use all train ops
+            for op_name in self.train_ops:
+                train_op_list.append(self.train_ops[op_name])
+        elif len(train_op_names) > 0:
+            # Use specified train ops
+            for op_name in train_op_names:
+                train_op_list.append(self.train_ops[op_name])
+        else:
+            # No training ops - we aren't training!
+            is_training = False
+
+        if output_tensor_names is None:
+            output_tensor_names = [name for name in self.output_tensors]
+
+        output_tensors = [self.output_tensors[each_tensor_name] for each_tensor_name in output_tensor_names]
+        output_tensor_dict = {}
+
+        for epoch_index in range(num_epochs):
+            batch_gen = BatchGenerator(placeholder_numpys, batch_size)
+            all_feed_dicts = []
+            all_output_batch_dicts = []
+
+            # Train on batches
+            for batch_index, placeholder_batch_numpys in enumerate(batch_gen.generate_batches()):
+                # Create feed dictionary, run on batch, collected batch i/o, print, save
+
+                feed_dict = {self.input_placeholders[placeholder_names[index]]: placeholder_batch_numpys[index] for index in range(len(placeholder_batch_numpys))}
+                [output_numpy_arrays, _] = self.sess.run([output_tensors, train_op_list], feed_dict)
+
+                output_batch_dict = {output_tensors[index]: output_numpy_arrays[index] for index in range(len(output_tensors))}
+
+                all_feed_dicts.append(feed_dict)
+                all_output_batch_dicts.append(output_batch_dict)
+
+                self.action_per_batch(all_feed_dicts, all_output_batch_dicts, epoch_index, batch_index, is_training, **kwargs)
+
+            # Give user option to define their own save mechanism - otherwise save
+            if save_per_epoch:
+                self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
+
+            # Concatenate batches to return output tensors
+            for each_tensor_name, each_tensor in zip(output_tensor_names, output_tensors):
+                current_tensor_batch_numpys = []
+                for each_batch_dict in all_output_batch_dicts:
+                    current_tensor_batch_numpys.append(each_batch_dict[each_tensor])
+                output_tensor_dict[each_tensor_name] = np.concatenate(current_tensor_batch_numpys, axis=0)
+
+            self.action_per_epoch(placeholder_dict, output_tensor_dict, epoch_index, is_training, **kwargs)
+
+        return output_tensor_dict
+
+    def predict(self, placeholder_dict, output_tensor_names=None, batch_size=32):
+
+        output_tensor_dict = self.train(placeholder_dict,  1,
+                                        output_tensor_names=output_tensor_names,
+                                        batch_size=batch_size,
+                                        train_op_names=[],
+                                        save_per_epoch=False)
+
+        return output_tensor_dict
+
+
+class SimpleModel(GenericModel):
+    def build(self):
+        tf_input = tf.placeholder(tf.float32, shape=(None, 1), name='x')
+        tf_output = tf_input + 3.0
+        self.input_placeholders['x'] = tf_input
+        self.output_tensors['y'] = tf_output
+
+    def build_trainer(self):
+        # No training
+        pass
+
+    def action_per_epoch(self, all_feed_dicts, output_tensor_dict, epoch_index, is_training, **kwargs):
+        print('Executing action_per_epoch')
+
+    def action_per_batch(self, all_feed_dicts, all_output_batch_dicts, epoch_index, batch_index, is_training, **kwargs):
+        print('Executing action_per_batch')
+
+
+class LessSimpleModel(GenericModel):
+    def build(self):
+        tf_input = tf.placeholder(tf.float32, shape=(None, 1), name='x')
+        tf_w = tf.get_variable('w', (), initializer=tf.contrib.layers.xavier_initializer())
+        tf_output = tf_input + tf_w
+        self.input_placeholders['x'] = tf_input
+        self.output_tensors['y'] = tf_output
+
+    def build_trainer(self):
+        tf_label = tf.placeholder(tf.float32, shape=(None, 1), name='label')
+        tf_loss = tf.nn.l2_loss(tf_label - self.output_tensors['y'])
+        train_op = tf.train.AdamOptimizer(.0001).minimize(tf_loss)
+        self.input_placeholders['label'] = tf_label
+        self.output_tensors['loss'] = tf_loss
+        self.train_ops['l2_loss'] = train_op
+
+
+class GenericModelTest(unittest2.TestCase):
+    def setUp(self):
+        pass
+
+    def test_simple_model_creation(self):
+        sm = SimpleModel('/tmp/sm_save/', 'sm')
+
+    def test_simple_model_prediction(self):
+        sm = SimpleModel('/tmp/sm_save/', 'sm')
+
+        output_dict = sm.predict({'x': np.array([[3], [4]])})
+
+        assert np.array_equal(output_dict['y'], np.array([[6.], [7.]]))
+
+    def test_simple_model_train(self):
+        sm = SimpleModel('/tmp/sm_save/', 'sm')
+
+        output_dict = sm.train({'x': np.array([[3], [4]])}, num_epochs=10, save_per_epoch=False)
+
+        assert np.array_equal(output_dict['y'], np.array([[6.], [7.]]))
