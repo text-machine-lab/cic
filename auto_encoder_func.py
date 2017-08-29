@@ -4,7 +4,7 @@ import baseline_model_func
 import chat_model_func
 import numpy as np
 
-MAX_MESSAGE_LENGTH = 20
+MAX_MESSAGE_LENGTH = 10
 MAX_NUMBER_OF_MESSAGES = None
 STOP_TOKEN = '<STOP>'
 DELIMITER = ' +++$+++ '

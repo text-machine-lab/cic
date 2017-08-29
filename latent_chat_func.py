@@ -8,7 +8,7 @@ import squad_dataset_tools as sdt
 import chat_model_func
 
 
-LEARNING_RATE = .0001
+LEARNING_RATE = .00001
 NUM_EXAMPLES = None
 BATCH_SIZE = 20
 NUM_EPOCHS = 100
