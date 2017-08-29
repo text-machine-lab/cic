@@ -186,7 +186,10 @@ class GenericModel(ABC):
                 current_tensor_batch_numpys = []
                 for each_batch_dict in all_output_batch_dicts:
                     current_tensor_batch_numpys.append(each_batch_dict[each_tensor])
-                output_tensor_dict[each_tensor_name] = np.concatenate(current_tensor_batch_numpys, axis=0)
+                if len(current_tensor_batch_numpys[0].shape) > 0:
+                    output_tensor_dict[each_tensor_name] = np.concatenate(current_tensor_batch_numpys, axis=0)
+                else:
+                    output_tensor_dict[each_tensor_name] = np.mean(current_tensor_batch_numpys)
 
             self.action_per_epoch(placeholder_dict, output_tensor_dict, epoch_index, is_training, **kwargs)
 
@@ -228,11 +231,12 @@ class LessSimpleModel(GenericModel):
         tf_output = tf_input + tf_w
         self.input_placeholders['x'] = tf_input
         self.output_tensors['y'] = tf_output
+        self.output_tensors['w'] = tf_w
 
     def build_trainer(self):
         tf_label = tf.placeholder(tf.float32, shape=(None, 1), name='label')
         tf_loss = tf.nn.l2_loss(tf_label - self.output_tensors['y'])
-        train_op = tf.train.AdamOptimizer(.0001).minimize(tf_loss)
+        train_op = tf.train.AdamOptimizer(.001).minimize(tf_loss)
         self.input_placeholders['label'] = tf_label
         self.output_tensors['loss'] = tf_loss
         self.train_ops['l2_loss'] = train_op
@@ -262,5 +266,7 @@ class GenericModelTest(unittest2.TestCase):
     def test_less_simple_model_train(self):
         lsm = LessSimpleModel('/tmp/lsm_save/', 'lsm')
 
-        output_dict = lsm.train({'x': np.array([[3]]), 'label': np.array([[6]])}, num_epochs=100, save_per_epoch=False)
+        output_dict = lsm.train({'x': np.array([[3]]), 'label': np.array([[6]])}, num_epochs=10000, save_per_epoch=False)
+        epsilon = .01
+        assert np.abs(3 - output_dict['w']) < epsilon
         print(output_dict)
