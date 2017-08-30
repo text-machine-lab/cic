@@ -204,8 +204,7 @@ with tf.Graph().as_default() as encoder_graph:
                                             save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
                                             load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
                                             learning_rate=LEARNING_RATE,
-                                            variational=auto_encoder_func.VARIATIONAL,
-                                            use_teacher_forcing=options.teacher_force)
+                                            variational=auto_encoder_func.VARIATIONAL)
 
 with tf.Graph().as_default() as decoder_graph:
     decoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
@@ -213,8 +212,7 @@ with tf.Graph().as_default() as decoder_graph:
                                             save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
                                             load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
                                             learning_rate=LEARNING_RATE,
-                                            variational=auto_encoder_func.VARIATIONAL,
-                                            use_teacher_forcing=options.teacher_force)
+                                            variational=auto_encoder_func.VARIATIONAL)
 
 if VALIDATE_ENCODER_AND_DECODER:
     np_val_latent = encoder.encode(np_val_messages, BATCH_SIZE)
