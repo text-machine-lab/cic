@@ -26,7 +26,7 @@ parser.add_option('-v', '--variational', dest='variational', default=False, acti
 
 (options, args) = parser.parse_args()
 
-if not options.train:
+if not options._eval:
     NUM_EPOCHS = 0
 else:
     NUM_EPOCHS = int(options.num_epochs)

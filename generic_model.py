@@ -10,12 +10,11 @@ def create_tensorboard_visualization(model_name):
     print('Creating Tensorboard visualization')
     writer = tf.summary.FileWriter("/tmp/" + model_name + "/")
     writer.add_graph(tf.get_default_graph())
+    return writer
 
 
-def restore_model_from_save(model_var_dir, var_list=None, sess=None, gpu_options=None):
+def restore_model_from_save(model_var_dir, sess, var_list=None, gpu_options=None):
     """Restores all model variables from the specified directory."""
-    if sess is None:
-        sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
 
     saver = tf.train.Saver(max_to_keep=10, var_list=var_list)
     # Restore model from previous save.
@@ -26,44 +25,96 @@ def restore_model_from_save(model_var_dir, var_list=None, sess=None, gpu_options
         print("No checkpoint found!")
         return -1
 
-    return sess
-
 
 def load_scope_from_save(save_dir, sess, scope):
     """Load the encoder model variables from checkpoint in save_dir.
     Store them in session sess."""
     variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
     assert len(variables) > 0
-    restore_model_from_save(save_dir, var_list=variables, sess=sess)
+    restore_model_from_save(save_dir, sess, var_list=variables)
+
+
+# class BatchGenerator:
+#     def __init__(self, datas, batch_size):
+#         if isinstance(datas, list):
+#             self.is_only_one_data = False
+#             self.datas = datas
+#         else:
+#             self.is_only_one_data = True
+#             self.datas = [datas]
+#         self.batch_size = batch_size
+#
+#     def generate_batches(self):
+#         m = self.datas[0].shape[0]
+#         num_batches = int(m / self.batch_size + 1)
+#         for batch_index in range(num_batches):
+#             if batch_index == num_batches - 1:
+#                 real_batch_size = m - batch_index * self.batch_size
+#             else:
+#                 real_batch_size = self.batch_size
+#
+#             if real_batch_size == 0:
+#                 break
+#
+#             batch = [np_data[self.batch_size*batch_index:self.batch_size*batch_index+real_batch_size] for np_data in self.datas]
+#             if not self.is_only_one_data:
+#                 yield batch
+#             else:
+#                 yield batch[0]
 
 
 class BatchGenerator:
-    def __init__(self, datas, batch_size):
-        if isinstance(datas, list):
-            self.is_only_one_data = False
-            self.datas = datas
-        else:
-            self.is_only_one_data = True
-            self.datas = [datas]
+    def __init__(self, dataset, batch_size, shuffle=True):
+        self.dataset = dataset
         self.batch_size = batch_size
+        self.shuffle=shuffle
 
     def generate_batches(self):
-        m = self.datas[0].shape[0]
-        num_batches = int(m / self.batch_size + 1)
-        for batch_index in range(num_batches):
-            if batch_index == num_batches - 1:
-                real_batch_size = m - batch_index * self.batch_size
-            else:
-                real_batch_size = self.batch_size
+        m = len(self.dataset)
+        indices = np.arange(m)
+        np.random.shuffle(indices)
+        num_batches = m // self.batch_size + 1
+        for i in range(num_batches):
+            for j in range(self.batch_size):
+                
 
-            if real_batch_size == 0:
-                break
 
-            batch = [np_data[self.batch_size*batch_index:self.batch_size*batch_index+real_batch_size] for np_data in self.datas]
-            if not self.is_only_one_data:
-                yield batch
+
+class Dataset(ABC):
+    @abstractmethod
+    def __getitem__(self, index):
+        # Get a single item as an index from the dataset.
+        pass
+
+    @abstractmethod
+    def __len__(self):
+        # Return the length of the dataset.
+        pass
+
+    def augment(self):
+        # Optional: Override for data augmentation
+        pass
+
+
+class DictionaryDataset(Dataset):
+    def __init__(self, placeholder_dict):
+        self.placeholder_dict = placeholder_dict
+        self.length = -1
+        for feature_name in self.placeholder_dict:
+            feature_length = self.placeholder_dict[feature_name].shape[0]
+            if self.length == -1:
+                self.length = feature_length
             else:
-                yield batch[0]
+                assert self.length == feature_length
+
+    def __getitem__(self, index):
+        item_dict = {}
+        for feature_name in self.placeholder_dict:
+            item_dict[feature_name] = self.placeholder_dict[feature_name][index, :]
+        return item_dict
+
+    def __len__(self):
+        return self.length
 
 
 class GenericModel(ABC):
@@ -78,7 +129,6 @@ class GenericModel(ABC):
         self.output_tensors = {}
         self.train_ops = {}
         self.build()
-        self.build_trainer()
         create_tensorboard_visualization(self.tensorboard_name)
         self.init = tf.global_variables_initializer()
         self.sess = tf.InteractiveSession()
@@ -99,18 +149,10 @@ class GenericModel(ABC):
 
         pass
 
-    @abstractmethod
-    def build_trainer(self):
-        # Implement trainer for model and specify loss functions. Use loss functions to
-        # create train ops. Add these train ops to the dictionary as name:op entries
-
-        pass
-
     def action_per_epoch(self, all_feed_dicts, output_tensor_dict, epoch_index, is_training, **kwargs):
         # Optional: Define action to take place at the end of every epoch. Can use this
         # for printing accuracy, saving statistics, etc. If is_training=False, we are using the model for
         # prediction. Check for this.
-        np.mean(output_tensor_dict['loss'])
         pass
 
     def action_per_batch(self, all_feed_dicts, all_output_batch_dicts, epoch_index, batch_index, is_training, **kwargs):
@@ -124,33 +166,30 @@ class GenericModel(ABC):
         # execute, as needed for other action functions.
         pass
 
-    def train(self, placeholder_dict, num_epochs, output_tensor_names=None, batch_size=32, train_op_names=None, save_per_epoch=True, **kwargs):
+    def _eval(self, dataset, num_epochs, output_tensor_names=None, batch_size=32, is_training=True, train_op_names=None, save_per_epoch=True, **kwargs):
 
-        self.action_before_training(placeholder_dict, num_epochs, output_tensor_names=output_tensor_names,
+        self.action_before_training(dataset, num_epochs, output_tensor_names=output_tensor_names,
                                     batch_size=batch_size, train_op_names=train_op_names,
                                     save_per_epoch=save_per_epoch, **kwargs)
 
-        placeholder_names = []
-        placeholder_numpys = []
-        for each_name in placeholder_dict:
-            placeholder_names.append(each_name)
-            placeholder_numpys.append(placeholder_dict[each_name])
-
-        is_training = True
+        # placeholder_names = []
+        # placeholder_numpys = []
+        # for each_name in placeholder_dict:
+        #     placeholder_names.append(each_name)
+        #     placeholder_numpys.append(placeholder_dict[each_name])
 
         # Specify training ops to run
         train_op_list = []
-        if train_op_names is None:
-            # Use all train ops
-            for op_name in self.train_ops:
-                train_op_list.append(self.train_ops[op_name])
-        elif len(train_op_names) > 0:
-            # Use specified train ops
-            for op_name in train_op_names:
-                train_op_list.append(self.train_ops[op_name])
-        else:
-            # No training ops - we aren't training!
-            is_training = False
+
+        if is_training:
+            if train_op_names is None:
+                # Use all train ops
+                for op_name in self.train_ops:
+                    train_op_list.append(self.train_ops[op_name])
+            else
+                # Use specified train ops
+                for op_name in train_op_names:
+                    train_op_list.append(self.train_ops[op_name])
 
         if output_tensor_names is None:
             output_tensor_names = [name for name in self.output_tensors]
@@ -191,13 +230,13 @@ class GenericModel(ABC):
                 else:
                     output_tensor_dict[each_tensor_name] = np.mean(current_tensor_batch_numpys)
 
-            self.action_per_epoch(placeholder_dict, output_tensor_dict, epoch_index, is_training, **kwargs)
+            self.action_per_epoch(dataset, output_tensor_dict, epoch_index, is_training, **kwargs)
 
         return output_tensor_dict
 
     def predict(self, placeholder_dict, output_tensor_names=None, batch_size=32):
 
-        output_tensor_dict = self.train(placeholder_dict,  1,
+        output_tensor_dict = self._eval(placeholder_dict, 1,
                                         output_tensor_names=output_tensor_names,
                                         batch_size=batch_size,
                                         train_op_names=[],
@@ -212,10 +251,6 @@ class SimpleModel(GenericModel):
         tf_output = tf_input + 3.0
         self.input_placeholders['x'] = tf_input
         self.output_tensors['y'] = tf_output
-
-    def build_trainer(self):
-        # No training
-        pass
 
     def action_per_epoch(self, all_feed_dicts, output_tensor_dict, epoch_index, is_training, **kwargs):
         print('Executing action_per_epoch')
@@ -233,7 +268,6 @@ class LessSimpleModel(GenericModel):
         self.output_tensors['y'] = tf_output
         self.output_tensors['w'] = tf_w
 
-    def build_trainer(self):
         tf_label = tf.placeholder(tf.float32, shape=(None, 1), name='label')
         tf_loss = tf.nn.l2_loss(tf_label - self.output_tensors['y'])
         train_op = tf.train.AdamOptimizer(.001).minimize(tf_loss)
@@ -259,14 +293,19 @@ class GenericModelTest(unittest2.TestCase):
     def test_simple_model_train(self):
         sm = SimpleModel('/tmp/sm_save/', 'sm')
 
-        output_dict = sm.train({'x': np.array([[3], [4]])}, num_epochs=10, save_per_epoch=False)
+        d = DictionaryDataset({'x': np.array([[3], [4]])})
+
+        output_dict = sm._eval(d, num_epochs=10, save_per_epoch=False)
 
         assert np.array_equal(output_dict['y'], np.array([[6.], [7.]]))
 
     def test_less_simple_model_train(self):
         lsm = LessSimpleModel('/tmp/lsm_save/', 'lsm')
 
-        output_dict = lsm.train({'x': np.array([[3]]), 'label': np.array([[6]])}, num_epochs=10000, save_per_epoch=False)
+        output_dict = lsm._eval({'x': np.array([[3]]), 'label': np.array([[6]])}, num_epochs=10000, save_per_epoch=False)
         epsilon = .01
         assert np.abs(3 - output_dict['w']) < epsilon
         print(output_dict)
+
+        y = lsm.predict({'x': np.array([[7]])}, ['y'])['y']
+        assert np.abs(y - 10) < epsilon
