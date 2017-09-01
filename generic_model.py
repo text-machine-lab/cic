@@ -34,50 +34,20 @@ def load_scope_from_save(save_dir, sess, scope):
     restore_model_from_save(save_dir, sess, var_list=variables)
 
 
-# class BatchGenerator:
-#     def __init__(self, datas, batch_size):
-#         if isinstance(datas, list):
-#             self.is_only_one_data = False
-#             self.datas = datas
-#         else:
-#             self.is_only_one_data = True
-#             self.datas = [datas]
-#         self.batch_size = batch_size
-#
-#     def generate_batches(self):
-#         m = self.datas[0].shape[0]
-#         num_batches = int(m / self.batch_size + 1)
-#         for batch_index in range(num_batches):
-#             if batch_index == num_batches - 1:
-#                 real_batch_size = m - batch_index * self.batch_size
-#             else:
-#                 real_batch_size = self.batch_size
-#
-#             if real_batch_size == 0:
-#                 break
-#
-#             batch = [np_data[self.batch_size*batch_index:self.batch_size*batch_index+real_batch_size] for np_data in self.datas]
-#             if not self.is_only_one_data:
-#                 yield batch
-#             else:
-#                 yield batch[0]
+def concatenate_batch_dictionaries(batch_dictionaries, single_examples=False):
+    # Concatenates numpy dictionaries. If numpy arrays represent single examples (no batch axis),
+    # set single_examples=True. Otherwise false.
+    # batch_dictionaries - list of dictionaries, all containing identical keys, each key being
+    # a feature name
+    result = {}
 
+    for key in batch_dictionaries[0]:
+        if single_examples or len(batch_dictionaries[0][key].shape) == 0:
+            result[key] = np.stack([d[key] for d in batch_dictionaries], axis=0)
+        else:
+            result[key] = np.concatenate([d[key] for d in batch_dictionaries], axis=0)
 
-class BatchGenerator:
-    def __init__(self, dataset, batch_size, shuffle=True):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.shuffle=shuffle
-
-    def generate_batches(self):
-        m = len(self.dataset)
-        indices = np.arange(m)
-        np.random.shuffle(indices)
-        num_batches = m // self.batch_size + 1
-        for i in range(num_batches):
-            for j in range(self.batch_size):
-                
-
+    return result
 
 
 class Dataset(ABC):
@@ -91,9 +61,25 @@ class Dataset(ABC):
         # Return the length of the dataset.
         pass
 
-    def augment(self):
-        # Optional: Override for data augmentation
-        pass
+    def generate_batches(self, batch_size, shuffle=False):
+        # Yield one batch from the dataset
+        m = len(self)
+        indices = np.arange(m)
+        if shuffle:
+            np.random.shuffle(indices)
+        num_batches = m // batch_size + 1
+
+        for i in range(num_batches):
+            index_batch = indices[i * batch_size:i * batch_size+batch_size]
+            if len(index_batch) == 0:
+                break
+
+            batch_data = [self[each_index] for each_index in index_batch]
+            # result = {}
+            # for key in batch_data[0]:
+            #     result[key] = np.stack([d[key] for d in batch_data], axis=0)
+
+            yield concatenate_batch_dictionaries(batch_data, single_examples=True)
 
 
 class DictionaryDataset(Dataset):
@@ -107,14 +93,20 @@ class DictionaryDataset(Dataset):
             else:
                 assert self.length == feature_length
 
+        if self.length <= 0:
+            raise ValueError('Cannot have zero-length dataset.')
+
     def __getitem__(self, index):
         item_dict = {}
         for feature_name in self.placeholder_dict:
-            item_dict[feature_name] = self.placeholder_dict[feature_name][index, :]
+            item_dict[feature_name] = self.placeholder_dict[feature_name][index]
         return item_dict
 
     def __len__(self):
         return self.length
+
+    def to_dict(self):
+        return self.placeholder_dict
 
 
 class GenericModel(ABC):
@@ -149,97 +141,93 @@ class GenericModel(ABC):
 
         pass
 
-    def action_per_epoch(self, all_feed_dicts, output_tensor_dict, epoch_index, is_training, **kwargs):
+    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, **kwargs):
         # Optional: Define action to take place at the end of every epoch. Can use this
         # for printing accuracy, saving statistics, etc. If is_training=False, we are using the model for
-        # prediction. Check for this.
-        pass
+        # prediction. Check for this. Returns true to continue training. Only return false if you wish to
+        # implement early-stopping.
+        return True
 
-    def action_per_batch(self, all_feed_dicts, all_output_batch_dicts, epoch_index, batch_index, is_training, **kwargs):
+    def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs):
         # Optional: Define action to take place at the end of every batch. Can use this
         # for printing accuracy, saving statistics, etc. If is_training=False, we are using the model for
         # prediction. Check for this.
         pass
 
-    def action_before_training(self, placeholder_dict, num_epochs, output_tensor_names=None, batch_size=32, train_op_names=None, save_per_epoch=True, **kwargs):
-        # Optional: Define action to take place at the beginning of training, once. This could be used to set output_tensor_names so that certain ops always
-        # execute, as needed for other action functions.
-        pass
+    def action_before_training(self, placeholder_dict, num_epochs, is_training, output_tensor_names=None, batch_size=32, train_op_names=None, save_per_epoch=True, **kwargs):
+        # Optional: Define action to take place at the beginning of training, once. This could be used to set
+        # output_tensor_names so that certain ops always execute, as needed for other action functions.
+        # Returns whether model will auto-save after each epoch, using the caller preference as default. Only
+        # set this to false if you want to handle saving in a custom way.
+        return save_per_epoch
 
     def _eval(self, dataset, num_epochs, output_tensor_names=None, batch_size=32, is_training=True, train_op_names=None, save_per_epoch=True, **kwargs):
 
-        self.action_before_training(dataset, num_epochs, output_tensor_names=output_tensor_names,
-                                    batch_size=batch_size, train_op_names=train_op_names,
-                                    save_per_epoch=save_per_epoch, **kwargs)
+        save_per_epoch = self.action_before_training(dataset, num_epochs, is_training,
+                                                     output_tensor_names=output_tensor_names,
+                                                     batch_size=batch_size, train_op_names=train_op_names,
+                                                     save_per_epoch=save_per_epoch, **kwargs)
 
-        # placeholder_names = []
-        # placeholder_numpys = []
-        # for each_name in placeholder_dict:
-        #     placeholder_names.append(each_name)
-        #     placeholder_numpys.append(placeholder_dict[each_name])
+        # Control what train ops are executed via arguments
+        if is_training and train_op_names is None:
+            train_op_list = [self.train_ops[op_name] for op_name in self.train_ops]
+        else:
+            train_op_list = [self.train_ops[op_name] for op_name in train_op_names]
 
-        # Specify training ops to run
-        train_op_list = []
-
-        if is_training:
-            if train_op_names is None:
-                # Use all train ops
-                for op_name in self.train_ops:
-                    train_op_list.append(self.train_ops[op_name])
-            else
-                # Use specified train ops
-                for op_name in train_op_names:
-                    train_op_list.append(self.train_ops[op_name])
-
+        # If user doesn't specify output tensors, evaluate them all!
         if output_tensor_names is None:
             output_tensor_names = [name for name in self.output_tensors]
 
+        # Create list of output tensors, initialize output dictionaries
         output_tensors = [self.output_tensors[each_tensor_name] for each_tensor_name in output_tensor_names]
-        output_tensor_dict = {}
+        all_output_batch_dicts = None
 
+        # Evaluate and/or train on dataset. Run user-defined action functions
         for epoch_index in range(num_epochs):
-            batch_gen = BatchGenerator(placeholder_numpys, batch_size)
-            all_feed_dicts = []
             all_output_batch_dicts = []
+            for batch_index, batch_dict in enumerate(dataset.generate_batches(batch_size=batch_size, shuffle=is_training)):
+                # Run batch in session
+                feed_dict = {self.input_placeholders[feature_name]: batch_dict[feature_name] for feature_name in batch_dict}
+                output_numpy_arrays, _ = self.sess.run([output_tensors, train_op_list], feed_dict)
 
-            # Train on batches
-            for batch_index, placeholder_batch_numpys in enumerate(batch_gen.generate_batches()):
-                # Create feed dictionary, run on batch, collected batch i/o, print, save
+                input_batch_dict = {feature_name: feed_dict[self.input_placeholders[feature_name]] for feature_name in batch_dict}
+                output_batch_dict = {output_tensor_names[index]: output_numpy_arrays[index] for index in range(len(output_tensor_names))}
 
-                feed_dict = {self.input_placeholders[placeholder_names[index]]: placeholder_batch_numpys[index] for index in range(len(placeholder_batch_numpys))}
-                [output_numpy_arrays, _] = self.sess.run([output_tensors, train_op_list], feed_dict)
-
-                output_batch_dict = {output_tensors[index]: output_numpy_arrays[index] for index in range(len(output_tensors))}
-
-                all_feed_dicts.append(feed_dict)
+                # Keep history of batch inputs/outputs
                 all_output_batch_dicts.append(output_batch_dict)
 
-                self.action_per_batch(all_feed_dicts, all_output_batch_dicts, epoch_index, batch_index, is_training, **kwargs)
+                self.action_per_batch(input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs)
 
-            # Give user option to define their own save mechanism - otherwise save
             if save_per_epoch:
                 self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
 
-            # Concatenate batches to return output tensors
-            for each_tensor_name, each_tensor in zip(output_tensor_names, output_tensors):
-                current_tensor_batch_numpys = []
-                for each_batch_dict in all_output_batch_dicts:
-                    current_tensor_batch_numpys.append(each_batch_dict[each_tensor])
-                if len(current_tensor_batch_numpys[0].shape) > 0:
-                    output_tensor_dict[each_tensor_name] = np.concatenate(current_tensor_batch_numpys, axis=0)
-                else:
-                    output_tensor_dict[each_tensor_name] = np.mean(current_tensor_batch_numpys)
+            continue_training = self.action_per_epoch(all_output_batch_dicts, epoch_index, is_training, **kwargs)
+            if not continue_training:
+                break
 
-            self.action_per_epoch(dataset, output_tensor_dict, epoch_index, is_training, **kwargs)
+        # Calculate output datasets
+        output_dict_concat = concatenate_batch_dictionaries(all_output_batch_dicts)
+
+        return output_dict_concat
+
+    def train(self, dataset, num_epochs, output_tensor_names=None, batch_size=32, **kwargs):
+
+        output_tensor_dict = self._eval(dataset, num_epochs,
+                                        output_tensor_names=output_tensor_names,
+                                        batch_size=batch_size,
+                                        train_op_names=None,
+                                        is_training=True,
+                                        save_per_epoch=True)
 
         return output_tensor_dict
 
-    def predict(self, placeholder_dict, output_tensor_names=None, batch_size=32):
+    def predict(self, dataset, output_tensor_names=None, batch_size=32):
 
-        output_tensor_dict = self._eval(placeholder_dict, 1,
+        output_tensor_dict = self._eval(dataset, 1,
                                         output_tensor_names=output_tensor_names,
                                         batch_size=batch_size,
                                         train_op_names=[],
+                                        is_training=False,
                                         save_per_epoch=False)
 
         return output_tensor_dict
@@ -252,10 +240,10 @@ class SimpleModel(GenericModel):
         self.input_placeholders['x'] = tf_input
         self.output_tensors['y'] = tf_output
 
-    def action_per_epoch(self, all_feed_dicts, output_tensor_dict, epoch_index, is_training, **kwargs):
+    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, **kwargs):
         print('Executing action_per_epoch')
 
-    def action_per_batch(self, all_feed_dicts, all_output_batch_dicts, epoch_index, batch_index, is_training, **kwargs):
+    def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs):
         print('Executing action_per_batch')
 
 
@@ -275,10 +263,90 @@ class LessSimpleModel(GenericModel):
         self.output_tensors['loss'] = tf_loss
         self.train_ops['l2_loss'] = train_op
 
+    def action_before_training(self, placeholder_dict, num_epochs, is_training, output_tensor_names=None, batch_size=32, train_op_names=None, save_per_epoch=True, **kwargs):
+        return False  # Do not save after each epoch
+
 
 class GenericModelTest(unittest2.TestCase):
     def setUp(self):
         pass
+
+    def test_batch_generator_and_dictionary_dataset_arange(self):
+        # non-shuffled batches correspond to input feature dictionary.
+        data = np.random.uniform(size=(50, 3))
+        feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+        dts = DictionaryDataset(feature_dict)
+        batch_size = 10
+        for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=False)):
+            for feature in batch_dict:
+                #print('batch_dict: ' + str(batch_dict[feature]))
+                #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
+                assert np.array_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size])
+
+    def test_batch_generator_and_dictionary_dataset_shuffle(self):
+        # Set shuffle to true and batches will not correspond to input feature dictionary
+        data = np.random.uniform(size=(50, 3))
+        feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+        dts = DictionaryDataset(feature_dict)
+        batch_size = 10
+        for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=True)):
+            for feature in batch_dict:
+                #print('batch_dict: ' + str(batch_dict[feature]))
+                #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
+                assert np.not_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size]).any()
+
+    def test_batch_generator_and_dictionary_dataset_arange_feature_vectors(self):
+        data = np.random.uniform(size=(50, 5))
+        feature_dict = {'f1': data[:, 0:2], 'f2': data[:, 2:4], 'f3': data[:, 4]}
+        dts = DictionaryDataset(feature_dict)
+        batch_size = 10
+        for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=False)):
+            for feature in batch_dict:
+                #print('batch_dict: ' + str(batch_dict[feature]))
+                #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
+                assert np.array_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size])
+
+    def test_batch_generator_and_dictionary_dataset_remainder(self):
+        data = np.random.uniform(size=(10, 3))
+        feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+        dts = DictionaryDataset(feature_dict)
+        batch_size = 20
+        for batch_dict in dts.generate_batches(batch_size=batch_size, shuffle=False):
+            assert batch_dict['f1'].shape == batch_dict['f2'].shape
+            assert batch_dict['f2'].shape == batch_dict['f3'].shape
+            assert batch_dict['f1'].shape[0] == 10
+
+    def test_batch_generator_and_empty_dictionary_dataset(self):
+        with self.assertRaises(ValueError):
+            DictionaryDataset({})
+
+    def test_dictionary_dataset(self):
+        data = np.random.uniform(size=(10, 3))
+        feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+        dts = DictionaryDataset(feature_dict)
+        for feature_name in feature_dict:
+            feature = feature_dict[feature_name]
+            for index in range(feature.shape[0]):
+                example_value = feature[index]
+                dataset_example = dts[index]
+                assert isinstance(dataset_example, dict)
+                #print(dataset_example)
+                dataset_example_value = dataset_example[feature_name]
+                assert np.array_equal(example_value, dataset_example_value)
+
+    def test_dictionary_dataset_vector_features(self):
+        data = np.random.uniform(size=(10, 5))
+        feature_dict = {'f1': data[:, 0:2], 'f2': data[:, 2:4], 'f3': data[:, 4]}
+        dts = DictionaryDataset(feature_dict)
+        for feature_name in feature_dict:
+            feature = feature_dict[feature_name]
+            for index in range(feature.shape[0]):
+                example_value = feature[index]
+                dataset_example = dts[index]
+                assert isinstance(dataset_example, dict)
+                #print(dataset_example)
+                dataset_example_value = dataset_example[feature_name]
+                assert np.array_equal(example_value, dataset_example_value)
 
     def test_simple_model_creation(self):
         SimpleModel('/tmp/sm_save/', 'sm')
@@ -286,7 +354,11 @@ class GenericModelTest(unittest2.TestCase):
     def test_simple_model_prediction(self):
         sm = SimpleModel('/tmp/sm_save/', 'sm')
 
-        output_dict = sm.predict({'x': np.array([[3], [4]])})
+        dataset = DictionaryDataset({'x': np.array([[3], [4]])})
+
+        output_dict = sm.predict(dataset)
+
+        print(output_dict)
 
         assert np.array_equal(output_dict['y'], np.array([[6.], [7.]]))
 
@@ -295,17 +367,26 @@ class GenericModelTest(unittest2.TestCase):
 
         d = DictionaryDataset({'x': np.array([[3], [4]])})
 
-        output_dict = sm._eval(d, num_epochs=10, save_per_epoch=False)
+        output_dict = sm.train(d, num_epochs=10)
 
-        assert np.array_equal(output_dict['y'], np.array([[6.], [7.]]))
+        print(output_dict)
+
+        # Account for automatic shuffling - check if outputs are correct.
+        assert np.array_equal(output_dict['y'], np.array([[6.], [7.]])) or \
+               np.array_equal(output_dict['y'], np.array([[7.], [6.]]))
 
     def test_less_simple_model_train(self):
         lsm = LessSimpleModel('/tmp/lsm_save/', 'lsm')
 
-        output_dict = lsm._eval({'x': np.array([[3]]), 'label': np.array([[6]])}, num_epochs=10000, save_per_epoch=False)
+        dataset = DictionaryDataset({'x': np.array([[3]]), 'label': np.array([[6]])})
+
+        output_dict = lsm.train(dataset, num_epochs=10000)
         epsilon = .01
         assert np.abs(3 - output_dict['w']) < epsilon
         print(output_dict)
 
-        y = lsm.predict({'x': np.array([[7]])}, ['y'])['y']
-        assert np.abs(y - 10) < epsilon
+        output_dict = lsm.predict(dataset, ['y'])
+
+        print(output_dict['y'])
+
+        assert np.abs(output_dict['y'] - 6) < epsilon
