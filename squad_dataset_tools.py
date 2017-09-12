@@ -71,11 +71,15 @@ def convert_paragraphs_to_flat_format(paragraphs):
         for each_qas in each_paragraph['qas']:
             question = each_qas['question']
             id = each_qas['id']
-            for each_answer in each_qas['answers']:
-                answer = each_answer['text']
-                answer_start = each_answer['answer_start']
-                # Add tuple
-                qacs_tuples.append((question, answer, context, id, answer_start))
+            answer = each_qas['answers'][0]
+            answer_text = answer['text']
+            answer_start = answer['answer_start']
+            qacs_tuples.append((question, answer_text, context, id, answer_start))
+            # for each_answer in each_qas['answers']:
+            #     answer = each_answer['text']
+            #     answer_start = each_answer['answer_start']
+            #     # Add tuple
+            #     qacs_tuples.append((question, answer, context, id, answer_start))
     return qacs_tuples
 
 
