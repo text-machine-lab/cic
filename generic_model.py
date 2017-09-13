@@ -1,5 +1,6 @@
 """This is a generic parent class for Tensorflow models. This file should be stand-alone."""
 import tensorflow as tf
+from tensorflow.examples.tutorials.mnist import input_data
 import numpy as np
 import unittest2
 import os
@@ -7,7 +8,7 @@ from abc import ABC, abstractmethod
 
 
 class GenericModel(ABC):
-    def __init__(self, save_dir, tensorboard_name, restore_from_save=False, trainable=True, tf_log_level='2'):
+    def __init__(self, save_dir=None, tensorboard_name=None, restore_from_save=False, trainable=True, tf_log_level='2'):
         """Abstract class which contains support functionality for developing Tensorflow models.
         Derive subclasses from this class and override the build() method. Define entire model in this method,
         and add all placeholders to self.input_placeholders dictionary as name:placeholder pairs. Add all tensors
@@ -28,7 +29,10 @@ class GenericModel(ABC):
             trainable: decide whether model will be trainable
             tf_log_level: by default, disables all outputs from Tensorflow backend (except errors)
         """
-        self.save_per_epoch = True
+        assert not restore_from_save or trainable  # don't restore un-trainable model
+        assert not restore_from_save or save_dir is not None # can only restore if there is a save directory
+
+        self.save_per_epoch = (save_dir is not None and trainable)
         self.shuffle = True
         self.restore_from_save = restore_from_save
         self.save_dir = save_dir
@@ -39,10 +43,12 @@ class GenericModel(ABC):
         self.output_tensors = {}
         self.train_ops = {}
         self.loss = None
+        self._create_standard_placeholders()
         self.build()
-        self.initialize_loss()
+        self._initialize_loss()
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = tf_log_level
-        create_tensorboard_visualization(self.tensorboard_name)
+        if self.tensorboard_name is not None:
+            create_tensorboard_visualization(self.tensorboard_name)
         self.init = tf.global_variables_initializer()
         self.sess = tf.InteractiveSession()
         self.sess.run(self.init)
@@ -50,14 +56,21 @@ class GenericModel(ABC):
             self.saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
         else:
             self.saver = None
-        assert not restore_from_save or self.trainable  # don't restore un-trainable model
         if self.restore_from_save:
             for each_scope in self.load_scopes:
                 load_scope_from_save(self.save_dir, self.sess, each_scope)
             if len(self.load_scopes) == 0:
                 restore_model_from_save(self.save_dir, self.sess)
 
-    def initialize_loss(self):
+    def _create_standard_placeholders(self):
+        """"""
+        self.input_placeholders['is training'] = tf.placeholder_with_default(False, (), name='is_training')
+
+    def _fill_standard_placeholders(self, is_training):
+        # Must at least return empty dictionary.
+        return {'is training': is_training}
+
+    def _initialize_loss(self):
         """If user specifies loss to train on (using self.loss), create an Adam optimizer to minimize that loss,
         and add the optimizer operation to dictionary of train ops. Initialize optional placeholder
         for learning rate and add it to input placeholders under name 'learning rate'. Add loss tensor
@@ -101,6 +114,11 @@ class GenericModel(ABC):
         """Evaluate output tensors of model with dataset as input. Optionally train on that dataset. Return dictionary
         of evaluated tensors to user. For internal use only, shared functionality between training and prediction."""
 
+        # united for the cause of training!
+        united_parameter_dict = self._fill_standard_placeholders(is_training)
+        if parameter_dict is not None:
+            united_parameter_dict.update(parameter_dict)
+
         # Allow dictionary as input!
         if isinstance(dataset, dict):
             dataset = DictionaryDataset(dataset)
@@ -114,10 +132,13 @@ class GenericModel(ABC):
                                     batch_size=batch_size, train_op_names=train_op_names, **kwargs)
 
         # Control what train ops are executed via arguments
-        if is_training and train_op_names is None:
-            train_op_list = [self.train_ops[op_name] for op_name in self.train_ops]
+        if is_training:
+            if train_op_names is None:
+                train_op_list = [self.train_ops[op_name] for op_name in self.train_ops]
+            else:
+                train_op_list = [self.train_ops[op_name] for op_name in train_op_names]
         else:
-            train_op_list = [self.train_ops[op_name] for op_name in train_op_names]
+            train_op_list = []
 
         # If user doesn't specify output tensors, evaluate them all!
         if output_tensor_names is None:
@@ -128,11 +149,8 @@ class GenericModel(ABC):
         all_output_batch_dicts = None
 
         # Create feed dictionary for model parameters
-        if parameter_dict is not None:
-            parameter_feed_dict = {self.input_placeholders[feature_name]: parameter_dict[feature_name]
-                                   for feature_name in parameter_dict}
-        else:
-            parameter_feed_dict = {}
+        parameter_feed_dict = {self.input_placeholders[feature_name]: united_parameter_dict[feature_name]
+                               for feature_name in united_parameter_dict}
 
         continue_training = True
         do_shuffle = self.shuffle and is_training
@@ -148,6 +166,9 @@ class GenericModel(ABC):
                 feed_dict = {self.input_placeholders[feature_name]: batch_dict[feature_name]
                              for feature_name in batch_dict}
                 feed_dict.update(parameter_feed_dict)
+
+                if not is_training:
+                    assert len(train_op_list) == 0
 
                 output_numpy_arrays, _ = self.sess.run([output_tensors, train_op_list], feed_dict)
 
@@ -194,7 +215,7 @@ class GenericModel(ABC):
         Returns: dictionary of evaluated output tensors.
         """
         output_tensor_dict = self._eval(dataset, num_epochs,
-                                        parameter_dict=parameter_dict,
+                                        united_parameter_dict=parameter_dict,
                                         output_tensor_names=output_tensor_names,
                                         batch_size=batch_size,
                                         train_op_names=None,
@@ -203,7 +224,7 @@ class GenericModel(ABC):
 
         return output_tensor_dict
 
-    def predict(self, dataset, output_tensor_names=None, parameter_dict=None,  batch_size=32, **kwargs):
+    def predict(self, dataset, output_tensor_names=None, parameter_dict=None, batch_size=32, **kwargs):
         """Predict on a dataset. Can specify which output tensors to evaluate. Can specify batch size and provide
         parameters arguments as inputs to model placeholders. To add constant values for input placeholders, pass to
         parameter_dict a dictionary containing name:value pairs. Name must match internal name of desired placeholder
@@ -219,7 +240,7 @@ class GenericModel(ABC):
 
         Returns: dictionary of evaluated output tensors."""
         output_tensor_dict = self._eval(dataset, 1,
-                                        parameter_dict=parameter_dict,
+                                        united_parameter_dict=parameter_dict,
                                         output_tensor_names=output_tensor_names,
                                         batch_size=batch_size,
                                         train_op_names=[],
@@ -299,6 +320,49 @@ class DictionaryDataset(Dataset):
 
     def to_dict(self):
         return self.batch_feature_dict
+
+
+class MNISTTrainSet:
+    def __init__(self, num_examples=None):
+        """Create dataset of MNIST examples for training on."""
+        self.num_examples = num_examples
+
+    def __getitem__(self):
+        # Not used
+        pass
+
+    def __len__(self):
+        # Not used
+        pass
+
+    def generate_batches(self, batch_size, shuffle=True):
+        # Shuffle parameter not used
+        mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+        if self.num_examples is None:
+            self.num_examples = mnist.train.num_examples
+        counter = 0
+
+        while True:
+            batch_xs, batch_ys = mnist.train.next_batch(batch_size, shuffle=shuffle)
+
+            if batch_xs.shape[0] != 0 and (counter * batch_size < self.num_examples):
+                yield {'image': batch_xs, 'label': batch_ys}
+            else:
+                break
+
+            counter += 1
+
+
+class MNISTTestSet(DictionaryDataset):
+    """Create dataset of MNIST examples for testing.
+
+    Features:
+        'image': numpy array of 784 pixel images (flattened from 28 x 28)
+        'label': numpy array of labels 0 - 9 indicating digit contained in each image"""
+
+    def __init__(self):
+        self.mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+        DictionaryDataset.__init__(self, {'image': self.mnist.test.images, 'label': self.mnist.test.labels})
 
 
 def create_tensorboard_visualization(model_name):
