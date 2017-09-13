@@ -148,6 +148,8 @@ class GenericModel(ABC):
         output_tensors = [self.output_tensors[each_tensor_name] for each_tensor_name in output_tensor_names]
         all_output_batch_dicts = None
 
+        print(united_parameter_dict)
+
         # Create feed dictionary for model parameters
         parameter_feed_dict = {self.input_placeholders[feature_name]: united_parameter_dict[feature_name]
                                for feature_name in united_parameter_dict}
@@ -215,7 +217,7 @@ class GenericModel(ABC):
         Returns: dictionary of evaluated output tensors.
         """
         output_tensor_dict = self._eval(dataset, num_epochs,
-                                        united_parameter_dict=parameter_dict,
+                                        parameter_dict=parameter_dict,
                                         output_tensor_names=output_tensor_names,
                                         batch_size=batch_size,
                                         train_op_names=None,
@@ -240,7 +242,7 @@ class GenericModel(ABC):
 
         Returns: dictionary of evaluated output tensors."""
         output_tensor_dict = self._eval(dataset, 1,
-                                        united_parameter_dict=parameter_dict,
+                                        parameter_dict=parameter_dict,
                                         output_tensor_names=output_tensor_names,
                                         batch_size=batch_size,
                                         train_op_names=[],
