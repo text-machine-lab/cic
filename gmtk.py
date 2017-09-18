@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 
 
 class GenericModel(ABC):
-    def __init__(self, save_dir=None, tensorboard_name=None, restore_from_save=False, trainable=True, tf_log_level='2'):
+    def __init__(self, save_dir=None, tensorboard_name=None, restore_from_save=False, trainable=True, tf_log_level='2', **kwargs):
         """Abstract class which contains support functionality for developing Tensorflow models.
         Derive subclasses from this class and override the build() method. Define entire model in this method,
         and add all placeholders to self.input_placeholders dictionary as name:placeholder pairs. Add all tensors
@@ -34,13 +34,14 @@ class GenericModel(ABC):
 
         self.save_per_epoch = (save_dir is not None and trainable)
         self.shuffle = True
+        self.params = kwargs
         self.restore_from_save = restore_from_save
         self.save_dir = save_dir
         self.trainable = trainable
         self.tensorboard_name = tensorboard_name
         self.load_scopes = []
-        self.input_placeholders = {}
-        self.output_tensors = {}
+        self.inputs = {}
+        self.outputs = {}
         self.train_ops = {}
         self.loss = None
         self._create_standard_placeholders()
@@ -64,7 +65,7 @@ class GenericModel(ABC):
 
     def _create_standard_placeholders(self):
         """"""
-        self.input_placeholders['is training'] = tf.placeholder_with_default(False, (), name='is_training')
+        self.inputs['is training'] = tf.placeholder_with_default(False, (), name='is_training')
 
     def _fill_standard_placeholders(self, is_training):
         # Must at least return empty dictionary.
@@ -78,8 +79,8 @@ class GenericModel(ABC):
         if self.loss is not None:
             learning_rate = tf.placeholder_with_default(.001, shape=(), name='learning_rate')
             self.train_ops['loss'] = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
-            self.input_placeholders['learning rate'] = learning_rate
-            self.output_tensors['loss'] = self.loss
+            self.inputs['learning rate'] = learning_rate
+            self.outputs['loss'] = self.loss
 
     @abstractmethod
     def build(self):
@@ -142,16 +143,14 @@ class GenericModel(ABC):
 
         # If user doesn't specify output tensors, evaluate them all!
         if output_tensor_names is None:
-            output_tensor_names = [name for name in self.output_tensors]
+            output_tensor_names = [name for name in self.outputs]
 
         # Create list of output tensors, initialize output dictionaries
-        output_tensors = [self.output_tensors[each_tensor_name] for each_tensor_name in output_tensor_names]
+        output_tensors = [self.outputs[each_tensor_name] for each_tensor_name in output_tensor_names]
         all_output_batch_dicts = None
 
-        print(united_parameter_dict)
-
         # Create feed dictionary for model parameters
-        parameter_feed_dict = {self.input_placeholders[feature_name]: united_parameter_dict[feature_name]
+        parameter_feed_dict = {self.inputs[feature_name]: united_parameter_dict[feature_name]
                                for feature_name in united_parameter_dict}
 
         continue_training = True
@@ -165,7 +164,7 @@ class GenericModel(ABC):
             all_output_batch_dicts = []
             for batch_index, batch_dict in enumerate(dataset.generate_batches(batch_size=batch_size, shuffle=do_shuffle)):
                 # Run batch in session - combine dataset features and parameters
-                feed_dict = {self.input_placeholders[feature_name]: batch_dict[feature_name]
+                feed_dict = {self.inputs[feature_name]: batch_dict[feature_name]
                              for feature_name in batch_dict}
                 feed_dict.update(parameter_feed_dict)
 
@@ -174,7 +173,7 @@ class GenericModel(ABC):
 
                 output_numpy_arrays, _ = self.sess.run([output_tensors, train_op_list], feed_dict)
 
-                input_batch_dict = {feature_name: feed_dict[self.input_placeholders[feature_name]]
+                input_batch_dict = {feature_name: feed_dict[self.inputs[feature_name]]
                                     for feature_name in batch_dict}
                 output_batch_dict = {output_tensor_names[index]: output_numpy_arrays[index]
                                      for index in range(len(output_tensor_names))}
@@ -216,6 +215,7 @@ class GenericModel(ABC):
 
         Returns: dictionary of evaluated output tensors.
         """
+
         output_tensor_dict = self._eval(dataset, num_epochs,
                                         parameter_dict=parameter_dict,
                                         output_tensor_names=output_tensor_names,
@@ -258,6 +258,7 @@ class Dataset(ABC):
     for a single example. Must implement __len__ function to specify size of dataset. Complete
     processing of dataset is encouraged to occur within a Dataset object. If retrieving single
     examples during training is too slow, the generate_batches() function can be overridden."""
+
     @abstractmethod
     def __getitem__(self, index):
         # Get a single item as an index from the dataset.
@@ -324,35 +325,10 @@ class DictionaryDataset(Dataset):
         return self.batch_feature_dict
 
 
-class MNISTTrainSet:
-    def __init__(self, num_examples=None):
-        """Create dataset of MNIST examples for training on."""
-        self.num_examples = num_examples
-
-    def __getitem__(self):
-        # Not used
-        pass
-
-    def __len__(self):
-        # Not used
-        pass
-
-    def generate_batches(self, batch_size, shuffle=True):
-        # Shuffle parameter not used
-        mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
-        if self.num_examples is None:
-            self.num_examples = mnist.train.num_examples
-        counter = 0
-
-        while True:
-            batch_xs, batch_ys = mnist.train.next_batch(batch_size, shuffle=shuffle)
-
-            if batch_xs.shape[0] != 0 and (counter * batch_size < self.num_examples):
-                yield {'image': batch_xs, 'label': batch_ys}
-            else:
-                break
-
-            counter += 1
+class MNISTTrainSet(DictionaryDataset):
+    def __init__(self):
+        self.mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+        DictionaryDataset.__init__(self, {'image': self.mnist.train.images, 'label': self.mnist.train.labels})
 
 
 class MNISTTestSet(DictionaryDataset):
@@ -365,6 +341,37 @@ class MNISTTestSet(DictionaryDataset):
     def __init__(self):
         self.mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
         DictionaryDataset.__init__(self, {'image': self.mnist.test.images, 'label': self.mnist.test.labels})
+
+
+class BatchMNISTTrainSet:
+    def __init__(self, num_examples=None):
+        """Create dataset of MNIST examples for training on."""
+        self.num_examples = num_examples
+        self.mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+
+    def __getitem__(self):
+        # Not used
+        pass
+
+    def __len__(self):
+        # Not used
+        pass
+
+    def generate_batches(self, batch_size, shuffle=True):
+        # Shuffle parameter not used
+        if self.num_examples is None:
+            self.num_examples = self.mnist.train.num_examples
+        counter = 0
+
+        while True:
+            batch_xs, batch_ys = self.mnist.train.next_batch(batch_size, shuffle=shuffle)
+
+            if batch_xs.shape[0] != 0 and (counter * batch_size < self.num_examples):
+                yield {'image': batch_xs, 'label': batch_ys}
+            else:
+                break
+
+            counter += 1
 
 
 def create_tensorboard_visualization(model_name):
@@ -420,8 +427,8 @@ class SimpleModel(GenericModel):
         self.trainable = False
         tf_input = tf.placeholder(tf.float32, shape=(None, 1), name='x')
         tf_output = tf_input + 3.0
-        self.input_placeholders['x'] = tf_input
-        self.output_tensors['y'] = tf_output
+        self.inputs['x'] = tf_input
+        self.outputs['y'] = tf_output
 
     def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, **kwargs):
         print('Executing action_per_epoch')
@@ -441,15 +448,15 @@ class LessSimpleModel(GenericModel):
         tf_input = tf.placeholder(tf.float32, shape=(None, 1), name='x')
         tf_w = tf.get_variable('w', (1, 1), initializer=tf.contrib.layers.xavier_initializer())
         tf_output = tf_input + tf_w
-        self.input_placeholders['x'] = tf_input
-        self.output_tensors['y'] = tf_output
-        self.output_tensors['w'] = tf_w
+        self.inputs['x'] = tf_input
+        self.outputs['y'] = tf_output
+        self.outputs['w'] = tf_w
 
         tf_label = tf.placeholder(tf.float32, shape=(None, 1), name='label')
-        tf_loss = tf.nn.l2_loss(tf_label - self.output_tensors['y'])
+        tf_loss = tf.nn.l2_loss(tf_label - self.outputs['y'])
         train_op = tf.train.AdamOptimizer(.001).minimize(tf_loss)
-        self.input_placeholders['label'] = tf_label
-        self.output_tensors['loss'] = tf_loss
+        self.inputs['label'] = tf_label
+        self.outputs['loss'] = tf_loss
         self.train_ops['l2_loss'] = train_op
 
     def action_before_training(self, placeholder_dict, num_epochs, is_training, output_tensor_names=None,
@@ -465,13 +472,13 @@ class EvenLessSimpleModel(GenericModel):
         tf_input = tf.placeholder(tf.float32, shape=(None, 1), name='x')
         tf_w = tf.get_variable('w', (1, 1), initializer=tf.contrib.layers.xavier_initializer())
         tf_output = tf_input + tf_w
-        self.input_placeholders['x'] = tf_input
-        self.output_tensors['y'] = tf_output
-        self.output_tensors['w'] = tf_w
+        self.inputs['x'] = tf_input
+        self.outputs['y'] = tf_output
+        self.outputs['w'] = tf_w
 
         tf_label = tf.placeholder(tf.float32, shape=(None, 1), name='label')
-        self.loss = tf.nn.l2_loss(tf_label - self.output_tensors['y'])
-        self.input_placeholders['label'] = tf_label
+        self.loss = tf.nn.l2_loss(tf_label - self.outputs['y'])
+        self.inputs['label'] = tf_label
 
     def action_before_training(self, placeholder_dict, num_epochs, is_training, output_tensor_names=None,
                                batch_size=32, train_op_names=None, **kwargs):

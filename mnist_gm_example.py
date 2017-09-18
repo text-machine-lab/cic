@@ -1,12 +1,13 @@
 """GenericModel class is used to train an MNIST classifier based on the Tensorflow MNIST tutorial.
 Create MNIST model, add per-batch action to print the batch number. Train it and then calculate
 training and testing accuracies."""
-import generic_model
+import gmtk
 import tensorflow as tf
 import numpy as np
+import timeit
 
 def example_basic_mnist():
-    class MNISTModel(generic_model.GenericModel):
+    class MNISTModel(gmtk.GenericModel):
         def build(self):
             """Copied from Tensorflow tutorial MNIST for ML Beginners example."""
             x = tf.placeholder(tf.float32, [None, 784])
@@ -18,15 +19,15 @@ def example_basic_mnist():
             correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
 
             # Create interface
-            self.input_placeholders['image'] = x
-            self.input_placeholders['label'] = y_
-            self.output_tensors['prediction'] = y
-            self.output_tensors['accuracy'] = correct_prediction
+            self.inputs['image'] = x
+            self.inputs['label'] = y_
+            self.outputs['prediction'] = y
+            self.outputs['accuracy'] = correct_prediction
 
     mnist_model = MNISTModel()
 
-    mnist_train_set = generic_model.MNISTTrainSet()
-    mnist_test_set = generic_model.MNISTTestSet()
+    mnist_train_set = gmtk.MNISTTrainSet()
+    mnist_test_set = gmtk.MNISTTestSet()
 
     train_dict = mnist_model.train(mnist_train_set, num_epochs=1)
 
@@ -37,8 +38,12 @@ def example_basic_mnist():
     print('Test accuracy: %s' % np.mean(test_dict['accuracy']))
 
 
-def example_advanced_mnist():
-    class ConvMNISTModel(generic_model.GenericModel):
+def example_advanced_mnist_batch():
+    example_advanced_mnist(use_batch_mnist_dataset=True)
+
+
+def example_advanced_mnist(use_batch_mnist_dataset=False):
+    class ConvMNISTModel(gmtk.GenericModel):
         def build(self):
             """Copied from Tensorflow tutorial Deep MNIST example."""
             def weight_variable(shape):
@@ -91,38 +96,52 @@ def example_advanced_mnist():
             correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))
 
             # Create interface
-            self.input_placeholders['image'] = x
-            self.input_placeholders['label'] = y_
-            self.input_placeholders['keep prob'] = keep_prob
-            self.output_tensors['prediction'] = y_conv
-            self.output_tensors['accuracy'] = correct_prediction
+            self.inputs['image'] = x
+            self.inputs['label'] = y_
+            self.inputs['keep prob'] = keep_prob
+            self.outputs['prediction'] = y_conv
+            self.outputs['accuracy'] = correct_prediction
 
-        def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs):
-            if is_training:
-                if batch_index % 1000 == 0:
-                    print('Batch: %s' % batch_index)
-                    print('Accuracy: %s' % np.mean(output_batch_dict['accuracy']))
+        # def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs):
+        #     if is_training:
+        #         if batch_index % 1000 == 0:
+        #             print('Batch: %s' % batch_index)
+        #             print('Accuracy: %s' % np.mean(output_batch_dict['accuracy']))
 
     mnist_model = ConvMNISTModel()
 
-    mnist_train_set = generic_model.MNISTTrainSet(num_examples=20000 * 50)
-    mnist_test_set = generic_model.MNISTTestSet()
+    if use_batch_mnist_dataset:
+        mnist_train_set = gmtk.BatchMNISTTrainSet()
+    else:
+        mnist_train_set = gmtk.MNISTTrainSet()
 
-    train_dict = mnist_model.train(mnist_train_set, num_epochs=1, parameter_dict={'keep prob': .5})
+    mnist_test_set = gmtk.MNISTTestSet()
 
-    #train_dict = mnist_model.predict(mnist_train_set, ['accuracy'])
-    print('Training accuracy: %s' % np.mean(train_dict['accuracy']))
+    def train():
+        train_dict = mnist_model.train(mnist_train_set, num_epochs=10, parameter_dict={'keep prob': .5})
+
+        print('Training accuracy: %s' % np.mean(train_dict['accuracy']))
+
+    print('Execution time: %s' % timeit.timeit(train, number=1))
 
     test_dict = mnist_model.predict(mnist_test_set, ['accuracy'], parameter_dict={'keep prob': 1.0})
     print('Test accuracy: %s' % np.mean(test_dict['accuracy']))
 
+if __name__ == '__main__':
 
-print('Basic MNIST model from Tensorflow tutorials')
+    print('Basic MNIST model from Tensorflow tutorials')
 
-example_basic_mnist()
+    example_basic_mnist()
 
-print()
-print('Advanced MNIST model from Tensorflow tutorials')
+    print()
+    print('Advanced MNIST model from Tensorflow tutorials')
 
-example_advanced_mnist()
+    print('Timing using dataset without overloaded batching...')
+    example_advanced_mnist(use_batch_mnist_dataset=False)
+    print('Timing using dataset with overloaded batching...')
+    example_advanced_mnist(use_batch_mnist_dataset=True)
+    print('Similar execution times indicate non-batching dataset performs well')
+    print('The standard dataset format is non-batching (overloaded __getitem__ operator)')
+
+
 
