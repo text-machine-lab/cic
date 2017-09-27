@@ -102,12 +102,6 @@ def example_advanced_mnist(use_batch_mnist_dataset=False):
             self.outputs['prediction'] = y_conv
             self.outputs['accuracy'] = correct_prediction
 
-        # def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs):
-        #     if is_training:
-        #         if batch_index % 1000 == 0:
-        #             print('Batch: %s' % batch_index)
-        #             print('Accuracy: %s' % np.mean(output_batch_dict['accuracy']))
-
     mnist_model = ConvMNISTModel()
 
     if use_batch_mnist_dataset:

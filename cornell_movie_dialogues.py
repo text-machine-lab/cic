@@ -22,38 +22,14 @@ class CornellMovieDialoguesDataset(gmtk.Dataset):
                                                                      stop_token=self.stop_token)
         # Create or reuse vocabulary
         if token_to_id is None:
-            self.token_to_id, self.id_to_token = self._create_vocabulary(self.messages)
+            self.token_to_id, self.id_to_token = create_vocabulary(self.messages)
         else:
             self.token_to_id = token_to_id
             self.id_to_token = {v: k for k, v in token_to_id.items()}
 
-        self.np_messages = self._construct_numpy_from_messages(self.messages,
+        self.np_messages = construct_numpy_from_messages(self.messages,
                                                                self.token_to_id,
                                                                self.max_message_length)
-
-    def _construct_numpy_from_messages(self, messages, vocab_dict, max_length):
-        """Construct a numpy array from messages using vocab_dict as a mapping
-        from each word to an integer index."""
-        m = len(messages)
-        np_messages = np.zeros([m, max_length])
-        for i in range(np_messages.shape[0]):
-            message = messages[i]
-            for j, each_token in enumerate(message):
-                if j < max_length:
-                    np_messages[i, j] = vocab_dict[each_token]
-        return np_messages
-
-    def _create_vocabulary(self, messages):
-        token_to_id = gensim.corpora.Dictionary(documents=messages).token2id
-        id_to_token = {v: k for k, v in token_to_id.items()}
-        # Add '' as index 0
-        num_non_empty_words = len(token_to_id)
-        token_to_id[id_to_token[0]] = num_non_empty_words
-        token_to_id[''] = 0
-        id_to_token[num_non_empty_words] = id_to_token[0]
-        id_to_token[0] = ''
-
-        return token_to_id, id_to_token
 
     def _load_messages_from_cornell_movie_lines(self, movie_lines_filename, nlp, max_number_of_messages=None,
                                                max_message_length=None, stop_token=None):
@@ -79,6 +55,8 @@ class CornellMovieDialoguesDataset(gmtk.Dataset):
                 break
         return messages
 
+
+
     def get_vocabulary(self):
         return self.token_to_id, self.id_to_token
 
@@ -90,6 +68,32 @@ class CornellMovieDialoguesDataset(gmtk.Dataset):
 
     def __len__(self):
         return len(self.messages)
+
+
+def create_vocabulary(messages):
+    token_to_id = gensim.corpora.Dictionary(documents=messages).token2id
+    id_to_token = {v: k for k, v in token_to_id.items()}
+    # Add '' as index 0
+    num_non_empty_words = len(token_to_id)
+    token_to_id[id_to_token[0]] = num_non_empty_words
+    token_to_id[''] = 0
+    id_to_token[num_non_empty_words] = id_to_token[0]
+    id_to_token[0] = ''
+
+    return token_to_id, id_to_token
+
+
+def construct_numpy_from_messages(messages, vocab_dict, max_length):
+    """Construct a numpy array from messages using vocab_dict as a mapping
+    from each word to an integer index."""
+    m = len(messages)
+    np_messages = np.zeros([m, max_length])
+    for i in range(np_messages.shape[0]):
+        message = messages[i]
+        for j, each_token in enumerate(message):
+            if j < max_length:
+                np_messages[i, j] = vocab_dict[each_token]
+    return np_messages
 
 
 class CornellMovieDialoguesTest(unittest2.TestCase):

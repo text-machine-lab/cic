@@ -4,11 +4,13 @@ from tensorflow.examples.tutorials.mnist import input_data
 import numpy as np
 import unittest2
 import os
+import time
+import random
 from abc import ABC, abstractmethod
 
 
 class GenericModel(ABC):
-    def __init__(self, save_dir=None, tensorboard_name=None, restore_from_save=False, trainable=True, tf_log_level='2', **kwargs):
+    def __init__(self, save_dir=None, tensorboard_name=None, restore_from_save=False, trainable=True, tf_log_level='2'):
         """Abstract class which contains support functionality for developing Tensorflow models.
         Derive subclasses from this class and override the build() method. Define entire model in this method,
         and add all placeholders to self.input_placeholders dictionary as name:placeholder pairs. Add all tensors
@@ -30,13 +32,17 @@ class GenericModel(ABC):
             tf_log_level: by default, disables all outputs from Tensorflow backend (except errors)
         """
         assert not restore_from_save or trainable  # don't restore un-trainable model
-        assert not restore_from_save or save_dir is not None # can only restore if there is a save directory
+        assert not restore_from_save or save_dir is not None  # can only restore if there is a save directory
 
         self.save_per_epoch = (save_dir is not None and trainable)
         self.shuffle = True
-        self.params = kwargs
         self.restore_from_save = restore_from_save
         self.save_dir = save_dir
+
+        # Create directory to save model
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+
         self.trainable = trainable
         self.tensorboard_name = tensorboard_name
         self.load_scopes = []
@@ -111,18 +117,18 @@ class GenericModel(ABC):
         pass
 
     def _eval(self, dataset, num_epochs, parameter_dict=None, output_tensor_names=None, batch_size=32, is_training=True,
-              train_op_names=None, **kwargs):
+              train_op_names=None, verbose=True, **kwargs):
         """Evaluate output tensors of model with dataset as input. Optionally train on that dataset. Return dictionary
         of evaluated tensors to user. For internal use only, shared functionality between training and prediction."""
 
-        # united for the cause of training!
+        # Allow user to give dictionaries of numpy features as input!
+        if isinstance(dataset, dict):
+            dataset = DictionaryDataset(dataset)
+
+        # Join parameters and default parameters into one dictionary
         united_parameter_dict = self._fill_standard_placeholders(is_training)
         if parameter_dict is not None:
             united_parameter_dict.update(parameter_dict)
-
-        # Allow dictionary as input!
-        if isinstance(dataset, dict):
-            dataset = DictionaryDataset(dataset)
 
         # Only train if model is trainable
         if is_training and not self.trainable:
@@ -142,6 +148,7 @@ class GenericModel(ABC):
             train_op_list = []
 
         # If user doesn't specify output tensors, evaluate them all!
+        # Note: train() function doesn't allow output_tensor_names=None for simplicity
         if output_tensor_names is None:
             output_tensor_names = [name for name in self.outputs]
 
@@ -160,6 +167,8 @@ class GenericModel(ABC):
         for epoch_index in range(num_epochs):
             if not continue_training:
                 break
+
+            epoch_start_time = time.time()
 
             all_output_batch_dicts = []
             for batch_index, batch_dict in enumerate(dataset.generate_batches(batch_size=batch_size, shuffle=do_shuffle)):
@@ -187,6 +196,11 @@ class GenericModel(ABC):
             if self.save_per_epoch and self.trainable and is_training:
                 self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
 
+            epoch_end_time = time.time()
+
+            if is_training and verbose:
+                print('Epoch %s Elapsed Time: %s' % (epoch_index, epoch_end_time - epoch_start_time))
+
             # Call user action per epoch, and allow them to stop training early
             continue_training = self.action_per_epoch(all_output_batch_dicts, epoch_index, is_training, **kwargs)
             if not continue_training:
@@ -197,7 +211,7 @@ class GenericModel(ABC):
 
         return output_dict_concat
 
-    def train(self, dataset, output_tensor_names=None, num_epochs=5, parameter_dict=None, batch_size=32, **kwargs):
+    def train(self, dataset, output_tensor_names=None, num_epochs=5, **kwargs):
         """Train on a dataset. Can specify which output tensors to evaluate (or none at all if dataset is too large).
         Can specify batch size and provide parameters arguments as inputs to model placeholders. To add constant
         values for input placeholders, pass to parameter_dict a dictionary containing name:value pairs. Name must
@@ -215,18 +229,19 @@ class GenericModel(ABC):
 
         Returns: dictionary of evaluated output tensors.
         """
+        # For training: if user doesn't specify output tensors to evaluate, don't evaluate any.
+        # If user wishes to evaluate all tensors, try output_tensor_names=(model).outputs
+        if output_tensor_names is None:
+            output_tensor_names = []
 
         output_tensor_dict = self._eval(dataset, num_epochs,
-                                        parameter_dict=parameter_dict,
                                         output_tensor_names=output_tensor_names,
-                                        batch_size=batch_size,
-                                        train_op_names=None,
                                         is_training=True,
                                         **kwargs)
 
         return output_tensor_dict
 
-    def predict(self, dataset, output_tensor_names=None, parameter_dict=None, batch_size=32, **kwargs):
+    def predict(self, dataset, output_tensor_names=None, **kwargs):
         """Predict on a dataset. Can specify which output tensors to evaluate. Can specify batch size and provide
         parameters arguments as inputs to model placeholders. To add constant values for input placeholders, pass to
         parameter_dict a dictionary containing name:value pairs. Name must match internal name of desired placeholder
@@ -242,9 +257,7 @@ class GenericModel(ABC):
 
         Returns: dictionary of evaluated output tensors."""
         output_tensor_dict = self._eval(dataset, 1,
-                                        parameter_dict=parameter_dict,
                                         output_tensor_names=output_tensor_names,
-                                        batch_size=batch_size,
                                         train_op_names=[],
                                         is_training=False,
                                         **kwargs)
@@ -288,6 +301,41 @@ class Dataset(ABC):
             #     result[key] = np.stack([d[key] for d in batch_data], axis=0)
 
             yield concatenate_batch_dictionaries(batch_data, single_examples=True)
+
+    def split(self, fraction, seed=None):
+        """Split dataset into two subset datasets. 'fraction' argument decides
+        what fraction of the original dataset is used to make the first subset.
+        The remaining examples are used to create the second subset. Typically
+        used for train/test splits."""
+        m = len(self)
+        dataset_indices = list(range(m))
+
+        if seed is not None:
+            random.seed(seed)
+
+        random.shuffle(dataset_indices)
+        subset_divider_index = int(m * fraction)
+        first_subset = DatasetPtr(self, dataset_indices[:subset_divider_index])
+        second_subset = DatasetPtr(self, dataset_indices[subset_divider_index:])
+        return first_subset, second_subset
+
+
+class DatasetPtr(Dataset):
+    def __init__(self, dataset, indices):
+        """Take as argument a dataset, and a list of indices
+        into that dataset. Sample from those indices to create
+        a subset dataset of the original dataset. Typically used
+        for breaking a dataset into subsets."""
+        self.dataset = dataset
+        self.indices = indices
+
+    def __getitem__(self, index):
+        """Grab the index'th index into the dataset
+        and return that data example."""
+        return self.dataset[self.indices[index]]
+
+    def __len__(self):
+        return len(self.indices)
 
 
 class DictionaryDataset(Dataset):
@@ -487,149 +535,160 @@ class EvenLessSimpleModel(GenericModel):
 
 # UNIT TESTS ###########################################################################################################
 
+if __name__ == '__main__':
+    class GenericModelTest(unittest2.TestCase):
+        def test_batch_generator_and_dictionary_dataset_arange(self):
+            """non-shuffled batches correspond to input feature dictionary. Test batch size."""
+            data = np.random.uniform(size=(50, 3))
+            feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+            dts = DictionaryDataset(feature_dict)
+            batch_size = 10
+            for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=False)):
+                for feature in batch_dict:
+                    #print('batch_dict: ' + str(batch_dict[feature]))
+                    #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
+                    assert batch_dict[feature].shape[0] == batch_size
+                    assert np.array_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size])
 
-class GenericModelTest(unittest2.TestCase):
-    def test_batch_generator_and_dictionary_dataset_arange(self):
-        """non-shuffled batches correspond to input feature dictionary. Test batch size."""
-        data = np.random.uniform(size=(50, 3))
-        feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
-        dts = DictionaryDataset(feature_dict)
-        batch_size = 10
-        for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=False)):
-            for feature in batch_dict:
-                #print('batch_dict: ' + str(batch_dict[feature]))
-                #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
-                assert batch_dict[feature].shape[0] == batch_size
-                assert np.array_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size])
+        def test_batch_generator_and_dictionary_dataset_shuffle(self):
+            """Set shuffle to true and batches will not correspond to input feature dictionary"""
+            data = np.random.uniform(size=(50, 3))
+            feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+            dts = DictionaryDataset(feature_dict)
+            batch_size = 10
+            for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=True)):
+                for feature in batch_dict:
+                    #print('batch_dict: ' + str(batch_dict[feature]))
+                    #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
+                    assert np.not_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size]).any()
 
-    def test_batch_generator_and_dictionary_dataset_shuffle(self):
-        """Set shuffle to true and batches will not correspond to input feature dictionary"""
-        data = np.random.uniform(size=(50, 3))
-        feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
-        dts = DictionaryDataset(feature_dict)
-        batch_size = 10
-        for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=True)):
-            for feature in batch_dict:
-                #print('batch_dict: ' + str(batch_dict[feature]))
-                #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
-                assert np.not_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size]).any()
+        def test_batch_generator_and_dictionary_dataset_arange_feature_vectors(self):
+            """Test that DictionaryDataset batches correspond to input dataset."""
+            data = np.random.uniform(size=(50, 5))
+            feature_dict = {'f1': data[:, 0:2], 'f2': data[:, 2:4], 'f3': data[:, 4]}
+            dts = DictionaryDataset(feature_dict)
+            batch_size = 10
+            for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=False)):
+                for feature in batch_dict:
+                    #print('batch_dict: ' + str(batch_dict[feature]))
+                    #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
+                    assert np.array_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size])
 
-    def test_batch_generator_and_dictionary_dataset_arange_feature_vectors(self):
-        """Test that DictionaryDataset batches correspond to input dataset."""
-        data = np.random.uniform(size=(50, 5))
-        feature_dict = {'f1': data[:, 0:2], 'f2': data[:, 2:4], 'f3': data[:, 4]}
-        dts = DictionaryDataset(feature_dict)
-        batch_size = 10
-        for index, batch_dict in enumerate(dts.generate_batches(batch_size=batch_size, shuffle=False)):
-            for feature in batch_dict:
-                #print('batch_dict: ' + str(batch_dict[feature]))
-                #print('feature_dict: ' + str(feature_dict[feature][index*batch_size:index*batch_size+batch_size]))
-                assert np.array_equal(batch_dict[feature], feature_dict[feature][index*batch_size:index*batch_size+batch_size])
+        def test_batch_generator_and_dictionary_dataset_remainder(self):
+            """Test that batch features have correct shape and DD can handle remainders."""
+            data = np.random.uniform(size=(10, 3))
+            feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+            dts = DictionaryDataset(feature_dict)
+            batch_size = 20
+            for batch_dict in dts.generate_batches(batch_size=batch_size, shuffle=False):
+                assert batch_dict['f1'].shape == batch_dict['f2'].shape
+                assert batch_dict['f2'].shape == batch_dict['f3'].shape
+                assert batch_dict['f1'].shape[0] == 10
 
-    def test_batch_generator_and_dictionary_dataset_remainder(self):
-        """Test that batch features have correct shape and DD can handle remainders."""
-        data = np.random.uniform(size=(10, 3))
-        feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
-        dts = DictionaryDataset(feature_dict)
-        batch_size = 20
-        for batch_dict in dts.generate_batches(batch_size=batch_size, shuffle=False):
-            assert batch_dict['f1'].shape == batch_dict['f2'].shape
-            assert batch_dict['f2'].shape == batch_dict['f3'].shape
-            assert batch_dict['f1'].shape[0] == 10
+        def test_batch_generator_and_dictionary_dataset_batch_size(self):
+            """Test that batch features have correct shape and DD can handle correct batch size."""
+            data = np.random.uniform(size=(100, 3))
+            feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+            dts = DictionaryDataset(feature_dict)
+            batch_size = 20
+            for batch_dict in dts.generate_batches(batch_size=batch_size, shuffle=False):
+                assert batch_dict['f1'].shape == batch_dict['f2'].shape
+                assert batch_dict['f2'].shape == batch_dict['f3'].shape
+                assert batch_dict['f1'].shape[0] == 20
 
-    def test_batch_generator_and_empty_dictionary_dataset(self):
-        """You cannot create an empty dataset."""
-        with self.assertRaises(ValueError):
-            DictionaryDataset({})
+        def test_batch_generator_and_empty_dictionary_dataset(self):
+            """You cannot create an empty dataset."""
+            with self.assertRaises(ValueError):
+                DictionaryDataset({})
 
-    def test_dictionary_dataset(self):
-        """Test that DictionaryDataset can handle multiple features."""
-        data = np.random.uniform(size=(10, 3))
-        feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
-        dts = DictionaryDataset(feature_dict)
-        for feature_name in feature_dict:
-            feature = feature_dict[feature_name]
-            for index in range(feature.shape[0]):
-                example_value = feature[index]
-                dataset_example = dts[index]
-                assert isinstance(dataset_example, dict)
-                #print(dataset_example)
-                dataset_example_value = dataset_example[feature_name]
-                assert np.array_equal(example_value, dataset_example_value)
+        def test_dictionary_dataset(self):
+            """Test that DictionaryDataset can handle multiple features."""
+            data = np.random.uniform(size=(10, 3))
+            feature_dict = {'f1': data[:, 0], 'f2': data[:, 1], 'f3': data[:, 2]}
+            dts = DictionaryDataset(feature_dict)
+            for feature_name in feature_dict:
+                feature = feature_dict[feature_name]
+                for index in range(feature.shape[0]):
+                    example_value = feature[index]
+                    dataset_example = dts[index]
+                    assert isinstance(dataset_example, dict)
+                    #print(dataset_example)
+                    dataset_example_value = dataset_example[feature_name]
+                    assert np.array_equal(example_value, dataset_example_value)
 
-    def test_dictionary_dataset_vector_features(self):
-        """Test that the DictionaryDataset can handle multi-dimensional features."""
-        data = np.random.uniform(size=(10, 5))
-        feature_dict = {'f1': data[:, 0:2], 'f2': data[:, 2:4], 'f3': data[:, 4]}
-        dts = DictionaryDataset(feature_dict)
-        for feature_name in feature_dict:
-            feature = feature_dict[feature_name]
-            for index in range(feature.shape[0]):
-                example_value = feature[index]
-                dataset_example = dts[index]
-                assert isinstance(dataset_example, dict)
-                #print(dataset_example)
-                dataset_example_value = dataset_example[feature_name]
-                assert np.array_equal(example_value, dataset_example_value)
+        def test_dictionary_dataset_vector_features(self):
+            """Test that the DictionaryDataset can handle multi-dimensional features."""
+            data = np.random.uniform(size=(10, 5))
+            feature_dict = {'f1': data[:, 0:2], 'f2': data[:, 2:4], 'f3': data[:, 4]}
+            dts = DictionaryDataset(feature_dict)
+            for feature_name in feature_dict:
+                feature = feature_dict[feature_name]
+                for index in range(feature.shape[0]):
+                    example_value = feature[index]
+                    dataset_example = dts[index]
+                    assert isinstance(dataset_example, dict)
+                    #print(dataset_example)
+                    dataset_example_value = dataset_example[feature_name]
+                    assert np.array_equal(example_value, dataset_example_value)
 
-    def test_simple_model_creation(self):
-        """Test that SimpleModel can be instantiated."""
-        SimpleModel('/tmp/sm_save/', 'sm')
+        def test_simple_model_creation(self):
+            """Test that SimpleModel can be instantiated."""
+            SimpleModel('/tmp/sm_save/', 'sm')
 
-    def test_simple_model_prediction(self):
-        """Test that SimpleModel adds 3 to input."""
-        sm = SimpleModel('/tmp/sm_save/', 'sm')
+        def test_simple_model_prediction(self):
+            """Test that SimpleModel adds 3 to input."""
+            sm = SimpleModel('/tmp/sm_save/', 'sm')
 
-        dataset = DictionaryDataset({'x': np.array([[3], [4]])})
+            dataset = DictionaryDataset({'x': np.array([[3], [4]])})
 
-        output_dict = sm.predict(dataset)
+            output_dict = sm.predict(dataset)
 
-        print(output_dict)
-
-        assert np.array_equal(output_dict['y'], np.array([[6.], [7.]]))
-
-    def test_simple_model_train(self):
-        """SimpleModel should not be able to train. Confirm this."""
-        sm = SimpleModel('/tmp/sm_save/', 'sm')
-
-        d = DictionaryDataset({'x': np.array([[3], [4]])})
-
-        with self.assertRaises(ValueError):
-            sm.train(d, num_epochs=10)
-
-    def test_less_simple_model_train(self):
-        """Trains LessSimpleModel for 10000 epochs to converge w value to 3."""
-        with tf.Graph().as_default():
-            lsm = LessSimpleModel('/tmp/lsm_save/', 'lsm')
-
-            dataset = DictionaryDataset({'x': np.array([[3]]), 'label': np.array([[6]])})
-
-            output_dict = lsm.train(dataset, num_epochs=10000)
-            epsilon = .01
-            assert np.abs(3 - output_dict['w']) < epsilon
             print(output_dict)
 
-            output_dict = lsm.predict(dataset, ['y'])
+            assert np.array_equal(output_dict['y'], np.array([[6.], [7.]]))
 
-            print(output_dict['y'])
+        def test_simple_model_train(self):
+            """SimpleModel should not be able to train. Confirm this."""
+            sm = SimpleModel('/tmp/sm_save/', 'sm')
 
-            assert np.abs(output_dict['y'] - 6) < epsilon
+            d = DictionaryDataset({'x': np.array([[3], [4]])})
 
-    def test_even_less_simple_model_train(self):
-        """Train EvenLessSimpleModel for 10000 epochs to converge w value to 3."""
-        with tf.Graph().as_default():
-            lsm = EvenLessSimpleModel('/tmp/lsm_save/', 'lsm')
+            with self.assertRaises(ValueError):
+                sm.train(d, num_epochs=10)
 
-            dataset = DictionaryDataset({'x': np.array([[3]]), 'label': np.array([[6]])})
+        def test_less_simple_model_train(self):
+            """Trains LessSimpleModel for 10000 epochs to converge w value to 3."""
+            with tf.Graph().as_default():
+                lsm = LessSimpleModel('/tmp/lsm_save/', 'lsm')
 
-            output_dict = lsm.train(dataset, num_epochs=10000)
-            epsilon = .1
-            assert np.abs(3 - output_dict['w']) < epsilon
-            assert output_dict['loss'] < epsilon
-            assert len(lsm.train_ops) == 1
-            print(output_dict)
+                dataset = DictionaryDataset({'x': np.array([[3]]), 'label': np.array([[6]])})
 
-            output_dict = lsm.predict(dataset, ['y', 'w'])
+                output_dict = lsm.train(dataset, num_epochs=10000)
+                epsilon = .01
+                assert np.abs(3 - output_dict['w']) < epsilon
+                print(output_dict)
 
-            assert np.abs(output_dict['y'] - 6) < epsilon
+                output_dict = lsm.predict(dataset, ['y'])
+
+                print(output_dict['y'])
+
+                assert np.abs(output_dict['y'] - 6) < epsilon
+
+        def test_even_less_simple_model_train(self):
+            """Train EvenLessSimpleModel for 10000 epochs to converge w value to 3."""
+            with tf.Graph().as_default():
+                lsm = EvenLessSimpleModel('/tmp/lsm_save/', 'lsm')
+
+                dataset = DictionaryDataset({'x': np.array([[3]]), 'label': np.array([[6]])})
+
+                output_dict = lsm.train(dataset, num_epochs=10000)
+                epsilon = .1
+                assert np.abs(3 - output_dict['w']) < epsilon
+                assert output_dict['loss'] < epsilon
+                assert len(lsm.train_ops) == 1
+                print(output_dict)
+
+                output_dict = lsm.predict(dataset, ['y', 'w'])
+
+                assert np.abs(output_dict['y'] - 6) < epsilon
 

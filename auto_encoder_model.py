@@ -35,7 +35,7 @@ parser.add_option('-m', '--max_messages', dest='max_messages', default=MAX_NUMBE
 
 (options, args) = parser.parse_args()
 
-if not options._eval:
+if not options.train:
     NUM_EPOCHS = 0
 else:
     NUM_EPOCHS = int(options.num_epochs)
@@ -225,8 +225,6 @@ if VALIDATE_ENCODER_AND_DECODER:
     assert np.isclose(np_val_message_reconstruct, np_val_decoder_reconstruct).all()
 
 # INTERACT #############################################################################################################
-
-
 
 if options.bot:
     print('Test the autoencoder!')
