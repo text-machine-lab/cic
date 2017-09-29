@@ -152,6 +152,11 @@ class GenericModel(ABC):
         if output_tensor_names is None:
             output_tensor_names = [name for name in self.outputs]
 
+        # Loss should always be evaluated during training if it exists
+        if self.loss is not None and is_training:
+            if 'loss' not in output_tensor_names:
+                output_tensor_names.append('loss')
+
         # Create list of output tensors, initialize output dictionaries
         output_tensors = [self.outputs[each_tensor_name] for each_tensor_name in output_tensor_names]
         all_output_batch_dicts = None
@@ -201,13 +206,13 @@ class GenericModel(ABC):
             if is_training and verbose:
                 print('Epoch %s Elapsed Time: %s' % (epoch_index, epoch_end_time - epoch_start_time))
 
+            # Calculate output dictionary from last epoch executed
+            output_dict_concat = concatenate_batch_dictionaries(all_output_batch_dicts)
+
             # Call user action per epoch, and allow them to stop training early
-            continue_training = self.action_per_epoch(all_output_batch_dicts, epoch_index, is_training, **kwargs)
+            continue_training = self.action_per_epoch(output_dict_concat, epoch_index, is_training, **kwargs)
             if not continue_training:
                 break
-
-        # Calculate output dictionary from last epoch executed
-        output_dict_concat = concatenate_batch_dictionaries(all_output_batch_dicts)
 
         return output_dict_concat
 
@@ -429,8 +434,10 @@ def create_tensorboard_visualization(model_name):
     return writer
 
 
-def restore_model_from_save(model_var_dir, sess, var_list=None, gpu_options=None):
+def restore_model_from_save(model_var_dir, sess, var_list=None):
     """Restores all model variables from the specified directory."""
+    if var_list is None:
+        var_list = tf.trainable_variables()
     saver = tf.train.Saver(max_to_keep=10, var_list=var_list)
     # Restore model from previous save.
     ckpt = tf.train.get_checkpoint_state(model_var_dir)

@@ -17,7 +17,6 @@ class AutoEncoder(gmtk.GenericModel):
 
     def build(self):
         # Load specific scopes from save - if not here, entire Graph is loaded
-        self.load_scopes = ['ENCODER', 'DECODER']
 
         # Build model with separate decoders for training and prediction
         self.inputs['message'] \
@@ -139,68 +138,86 @@ class AutoEncoder(gmtk.GenericModel):
 
         return results['prediction']
 
-    # def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs):
-    #     if batch_index % 200 == 0:
-    #         print(batch_index)
+    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, **kwargs):
+        """Print the loss for debugging purposes."""
+        if is_training:
+            epoch_loss = np.mean(output_tensor_dict['loss'])
+            print('Epoch loss: %s' % epoch_loss)
+
+        return True
+
+# EXECUTION ############################################################################################################
 
 if __name__ == '__main__':
-    cmd_dataset = cmd.CornellMovieDialoguesDataset(max_message_length=20, num_examples=100)
+    cmd_dataset = cmd.CornellMovieDialoguesDataset(max_message_length=20)
 
-    train_cmd, val_cmd = cmd_dataset.split(fraction=0.9)
+    train_cmd, val_cmd = cmd_dataset.split(fraction=0.9, seed='hello world')
 
     print('Number of training examples: %s' % len(train_cmd))
     print('Number of validation examples: %s' % len(val_cmd))
 
     token_to_id, id_to_token = cmd_dataset.get_vocabulary()
 
-    autoencoder = AutoEncoder(len(token_to_id), tensorboard_name='gmae', save_dir='./data/autoencoder/first/')
+    autoencoder = AutoEncoder(len(token_to_id), tensorboard_name='gmae', save_dir='./data/autoencoder/first',
+                              restore_from_save=True)
 
-    autoencoder.train(train_cmd, output_tensor_names=['train_prediction'],
-                      num_epochs=100, batch_size=20, verbose=False)
+    # autoencoder.train(train_cmd, output_tensor_names=['train_prediction'],
+    #                   parameter_dict={'keep prob': 0.9, 'learning rate': .0005},
+    #                   num_epochs=100, batch_size=20, verbose=True)
 
-    predictions = autoencoder.decode(autoencoder.encode(train_cmd))
+    def calculate_train_accuracy():
+        predictions = autoencoder.decode(autoencoder.encode(train_cmd))
 
-    # Here, I need to convert predictions back to English and print
-    reconstructed_messages = sdt.convert_numpy_array_to_strings(predictions, id_to_token,
-                                                                stop_token=cmd_dataset.stop_token,
-                                                                keep_stop_token=True)
-
-    for i in range(10):
-        print(' '.join(cmd_dataset.messages[train_cmd.indices[i]]) + " | " + reconstructed_messages[i])
-
-    num_train_correct = 0
-    for i in range(len(reconstructed_messages)):
-        original_message = ' '.join(cmd_dataset.messages[train_cmd.indices[i]])
-        if original_message == reconstructed_messages[i]:
-            num_train_correct += 1
-
-    print('Train EM accuracy: %s' % (num_train_correct / len(reconstructed_messages)))
-
-    val_predictions = autoencoder.decode(autoencoder.encode(val_cmd))
-
-    val_reconstructed_messages = sdt.convert_numpy_array_to_strings(val_predictions, id_to_token,
+        # Here, I need to convert predictions back to English and print
+        reconstructed_messages = sdt.convert_numpy_array_to_strings(predictions, id_to_token,
                                                                     stop_token=cmd_dataset.stop_token,
                                                                     keep_stop_token=True)
 
+        for i in range(10):
+            print(' '.join(cmd_dataset.messages[train_cmd.indices[i]]) + " | " + reconstructed_messages[i])
+
+        num_train_correct = 0
+        for i in range(len(reconstructed_messages)):
+            original_message = ' '.join(cmd_dataset.messages[train_cmd.indices[i]])
+            if original_message == reconstructed_messages[i]:
+                num_train_correct += 1
+
+        print('Train EM accuracy: %s' % (num_train_correct / len(reconstructed_messages)))
+
+
+    def predict_using_autoencoder_and_calculate_accuracy():
+
+        val_predictions = autoencoder.decode(autoencoder.encode(val_cmd))
+
+        val_reconstructed_messages = sdt.convert_numpy_array_to_strings(val_predictions, id_to_token,
+                                                                        stop_token=cmd_dataset.stop_token,
+                                                                        keep_stop_token=True)
+        for i in range(10):
+            print(' '.join(cmd_dataset.messages[val_cmd.indices[i]]) + " | " + val_reconstructed_messages[i])
+
+        num_val_correct = 0
+        for i in range(len(val_reconstructed_messages)):
+            original_message = ' '.join(cmd_dataset.messages[val_cmd.indices[i]])
+            if original_message == val_reconstructed_messages[i]:
+                num_val_correct += 1
+
+        print('Validation EM accuracy: %s' % (num_val_correct / len(val_reconstructed_messages)))
+
+
+    def input_arbitrary_messages_into_autoencoder():
+        print('Testing the autoencoder...')
+        # Test autoencoder using stdin
+        while True:
+            message = input('Message: ')
+            np_message = cmd_dataset.convert_strings_to_numpy([message])
+            np_message_reconstruct = autoencoder.decode(autoencoder.encode(np_message))
+            message_reconstruct = cmd_dataset.convert_numpy_to_strings(np_message_reconstruct)[0]
+            print('Reconstruct: %s' % message_reconstruct)
+
+    # calculate_train_accuracy()
     print()
-
-    for i in range(10):
-        print(' '.join(cmd_dataset.messages[val_cmd.indices[i]]) + " | " + val_reconstructed_messages[i])
-
-    num_val_correct = 0
-    for i in range(len(val_reconstructed_messages)):
-        original_message = ' '.join(cmd_dataset.messages[val_cmd.indices[i]])
-        if original_message == val_reconstructed_messages[i]:
-            num_val_correct += 1
-
-    print('Validation EM accuracy: %s' % (num_val_correct / len(val_reconstructed_messages)))
-
-    # print('Testing the autoencoder...')
-    # # Test autoencoder using stdin
-    # while True:
-    #     message = input('Message: ')
-    #     np_message = cmd.construct_numpy_from_messages([message.split()])
-
+    # predict_using_autoencoder_and_calculate_accuracy()
+    input_arbitrary_messages_into_autoencoder()
 
 
 

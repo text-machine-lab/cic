@@ -28,8 +28,8 @@ class CornellMovieDialoguesDataset(gmtk.Dataset):
             self.id_to_token = {v: k for k, v in token_to_id.items()}
 
         self.np_messages = construct_numpy_from_messages(self.messages,
-                                                               self.token_to_id,
-                                                               self.max_message_length)
+                                                         self.token_to_id,
+                                                         self.max_message_length)
 
     def _load_messages_from_cornell_movie_lines(self, movie_lines_filename, nlp, max_number_of_messages=None,
                                                max_message_length=None, stop_token=None):
@@ -55,7 +55,21 @@ class CornellMovieDialoguesDataset(gmtk.Dataset):
                 break
         return messages
 
+    def convert_numpy_to_strings(self, np_messages):
+        messages = sdt.convert_numpy_array_to_strings(np_messages, self.id_to_token,
+                                                                 self.stop_token,
+                                                                 keep_stop_token=False)
+        return messages
 
+    def convert_strings_to_numpy(self, strings):
+        tk_token_strings = []
+        for each_string in strings:
+            tk_string = self.nlp.tokenizer(each_string.lower())
+            tk_tokens = [str(token) for token in tk_string if str(token) != ' ' and str(token) in self.token_to_id]
+            tk_tokens += [self.stop_token]
+            tk_token_strings.append(tk_tokens)
+
+        return construct_numpy_from_messages(tk_token_strings, self.token_to_id, self.max_message_length)
 
     def get_vocabulary(self):
         return self.token_to_id, self.id_to_token
