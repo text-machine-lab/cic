@@ -37,37 +37,45 @@ class GenericModel(ABC):
         self.save_per_epoch = (save_dir is not None and trainable)
         self.shuffle = True
         self.restore_from_save = restore_from_save
+
+        # Make sure there is slash after save directory. Important!
+        if not save_dir.endswith('/'):
+            save_dir += '/'
+
         self.save_dir = save_dir
 
         # Create directory to save model
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
 
-        self.trainable = trainable
-        self.tensorboard_name = tensorboard_name
-        self.load_scopes = []
-        self.inputs = {}
-        self.outputs = {}
-        self.train_ops = {}
-        self.loss = None
-        self._create_standard_placeholders()
-        self.build()
-        self._initialize_loss()
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = tf_log_level
-        if self.tensorboard_name is not None:
-            create_tensorboard_visualization(self.tensorboard_name)
-        self.init = tf.global_variables_initializer()
-        self.sess = tf.InteractiveSession()
-        self.sess.run(self.init)
-        if self.trainable:
-            self.saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
-        else:
-            self.saver = None
-        if self.restore_from_save:
-            for each_scope in self.load_scopes:
-                load_scope_from_save(self.save_dir, self.sess, each_scope)
-            if len(self.load_scopes) == 0:
-                restore_model_from_save(self.save_dir, self.sess)
+        self.graph = tf.Graph()
+        with self.graph.as_default():
+            self.trainable = trainable
+            self.tensorboard_name = tensorboard_name
+            self.load_scopes = []
+            self.inputs = {}
+            self.outputs = {}
+            self.train_ops = {}
+            self.loss = None
+            self._create_standard_placeholders()
+
+            self.build()
+            self._initialize_loss()
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = tf_log_level
+            if self.tensorboard_name is not None:
+                create_tensorboard_visualization(self.tensorboard_name)
+            self.init = tf.global_variables_initializer()
+            self.sess = tf.InteractiveSession()
+            self.sess.run(self.init)
+            if self.trainable:
+                self.saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=10)
+            else:
+                self.saver = None
+            if self.restore_from_save:
+                for each_scope in self.load_scopes:
+                    load_scope_from_save(self.save_dir, self.sess, each_scope)
+                if len(self.load_scopes) == 0:
+                    restore_model_from_save(self.save_dir, self.sess)
 
     def _create_standard_placeholders(self):
         """"""
@@ -121,6 +129,9 @@ class GenericModel(ABC):
         """Evaluate output tensors of model with dataset as input. Optionally train on that dataset. Return dictionary
         of evaluated tensors to user. For internal use only, shared functionality between training and prediction."""
 
+        if verbose and is_training:
+            print('Training...')
+
         # Allow user to give dictionaries of numpy features as input!
         if isinstance(dataset, dict):
             dataset = DictionaryDataset(dataset)
@@ -168,51 +179,52 @@ class GenericModel(ABC):
         continue_training = True
         do_shuffle = self.shuffle and is_training
 
-        # Evaluate and/or train on dataset. Run user-defined action functions
-        for epoch_index in range(num_epochs):
-            if not continue_training:
-                break
+        with self.graph.as_default():
+            # Evaluate and/or train on dataset. Run user-defined action functions
+            for epoch_index in range(num_epochs):
+                if not continue_training:
+                    break
 
-            epoch_start_time = time.time()
+                epoch_start_time = time.time()
 
-            all_output_batch_dicts = []
-            for batch_index, batch_dict in enumerate(dataset.generate_batches(batch_size=batch_size, shuffle=do_shuffle)):
-                # Run batch in session - combine dataset features and parameters
-                feed_dict = {self.inputs[feature_name]: batch_dict[feature_name]
-                             for feature_name in batch_dict}
-                feed_dict.update(parameter_feed_dict)
+                all_output_batch_dicts = []
+                for batch_index, batch_dict in enumerate(dataset.generate_batches(batch_size=batch_size, shuffle=do_shuffle)):
+                    # Run batch in session - combine dataset features and parameters
+                    feed_dict = {self.inputs[feature_name]: batch_dict[feature_name]
+                                 for feature_name in batch_dict}
+                    feed_dict.update(parameter_feed_dict)
 
-                if not is_training:
-                    assert len(train_op_list) == 0
+                    if not is_training:
+                        assert len(train_op_list) == 0
 
-                output_numpy_arrays, _ = self.sess.run([output_tensors, train_op_list], feed_dict)
+                    output_numpy_arrays, _ = self.sess.run([output_tensors, train_op_list], feed_dict)
 
-                input_batch_dict = {feature_name: feed_dict[self.inputs[feature_name]]
-                                    for feature_name in batch_dict}
-                output_batch_dict = {output_tensor_names[index]: output_numpy_arrays[index]
-                                     for index in range(len(output_tensor_names))}
+                    input_batch_dict = {feature_name: feed_dict[self.inputs[feature_name]]
+                                        for feature_name in batch_dict}
+                    output_batch_dict = {output_tensor_names[index]: output_numpy_arrays[index]
+                                         for index in range(len(output_tensor_names))}
 
-                # Keep history of batch outputs
-                all_output_batch_dicts.append(output_batch_dict)
+                    # Keep history of batch outputs
+                    all_output_batch_dicts.append(output_batch_dict)
 
-                self.action_per_batch(input_batch_dict, output_batch_dict, epoch_index,
-                                      batch_index, is_training, **kwargs)
+                    self.action_per_batch(input_batch_dict, output_batch_dict, epoch_index,
+                                          batch_index, is_training, **kwargs)
 
-            if self.save_per_epoch and self.trainable and is_training:
-                self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
+                if self.save_per_epoch and self.trainable and is_training:
+                    self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
 
-            epoch_end_time = time.time()
+                epoch_end_time = time.time()
 
-            if is_training and verbose:
-                print('Epoch %s Elapsed Time: %s' % (epoch_index, epoch_end_time - epoch_start_time))
+                if is_training and verbose:
+                    print('Epoch %s Elapsed Time: %s' % (epoch_index, epoch_end_time - epoch_start_time))
 
-            # Calculate output dictionary from last epoch executed
-            output_dict_concat = concatenate_batch_dictionaries(all_output_batch_dicts)
+                # Calculate output dictionary from last epoch executed
+                output_dict_concat = concatenate_batch_dictionaries(all_output_batch_dicts)
 
-            # Call user action per epoch, and allow them to stop training early
-            continue_training = self.action_per_epoch(output_dict_concat, epoch_index, is_training, **kwargs)
-            if not continue_training:
-                break
+                # Call user action per epoch, and allow them to stop training early
+                continue_training = self.action_per_epoch(output_dict_concat, epoch_index, is_training, **kwargs)
+                if not continue_training:
+                    break
 
         return output_dict_concat
 

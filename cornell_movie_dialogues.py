@@ -11,14 +11,16 @@ import squad_dataset_tools as sdt
 class CornellMovieDialoguesDataset(gmtk.Dataset):
     def __init__(self, max_message_length=30, token_to_id=None, num_examples=None):
         """Currently creates a dataset of utterances from the dataset, for use in training an autoencoder.
-        Does not return messsage -> response pairs as of now."""
+        Does not return messsage -> response pairs as of now. max_message_length includes stop token, so really
+        the largest sentence the autoencoder can encode is one less than the max length!"""
         self.stop_token = '<STOP>'
         self.num_examples = num_examples
         self.max_message_length = max_message_length
-        self.nlp = spacy.load('en')
+        self.nlp = spacy.load('en_core_web_sm')
+        # Add -1 to message length to include stop token
         self.messages = self._load_messages_from_cornell_movie_lines(config.CORNELL_MOVIE_LINES_FILE, self.nlp,
                                                                      max_number_of_messages=self.num_examples,
-                                                                     max_message_length=self.max_message_length,
+                                                                     max_message_length=self.max_message_length - 1,
                                                                      stop_token=self.stop_token)
         # Create or reuse vocabulary
         if token_to_id is None:
@@ -133,4 +135,10 @@ class CornellMovieDialoguesTest(unittest2.TestCase):
                     print(each_message)
                     print(each_reconstructed_message)
                     exit()
+
+    def test_len(self):
+        cmd_dataset = CornellMovieDialoguesDataset(max_message_length=10)
+
+        for each_message in cmd_dataset.messages:
+            assert len(each_message) <= 10
 
