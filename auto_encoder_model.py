@@ -224,8 +224,6 @@ if VALIDATE_ENCODER_AND_DECODER:
 
 # INTERACT #############################################################################################################
 
-
-
 if options.bot:
     print('Test the autoencoder!')
     while(True):

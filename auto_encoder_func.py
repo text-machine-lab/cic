@@ -3,12 +3,13 @@ import tensorflow as tf
 import baseline_model_func
 import chat_model_func
 import numpy as np
+import time
 
 MAX_MESSAGE_LENGTH = 10
 MAX_NUMBER_OF_MESSAGES = None
 STOP_TOKEN = '<STOP>'
 DELIMITER = ' +++$+++ '
-RNN_HIDDEN_DIM = 400
+RNN_HIDDEN_DIM = 500
 LEARNED_EMBEDDING_SIZE = 200
 LEARNING_RATE = .0005
 KEEP_PROB = .9
@@ -136,7 +137,9 @@ class AutoEncoder:
         """Trains on examples from np_input for num_epoch epochs,
         by dividing the data into batches of size batch_size."""
         examples_per_print = 200
+
         for epoch in range(num_epochs):
+            epoch_start_time = time.time()
             print('Epoch: %s' % epoch)
             kl_const = min(kl_const_start + epoch * kl_increase, kl_max)
             if verbose:
@@ -161,6 +164,9 @@ class AutoEncoder:
                     per_print_batch_losses = []
                     per_print_batch_kl_losses = []
             self.saver.save(self.sess, self.save_dir, global_step=epoch)
+            epoch_end_time = time.time()
+            print('Epoch elapsed time: %s' % (epoch_end_time - epoch_start_time))
+
         np_train_message_reconstruct = np.concatenate(all_train_message_batches, axis=0)
         return np_train_message_reconstruct
 
