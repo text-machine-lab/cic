@@ -290,7 +290,21 @@ class AutoEncoder(gmtk.GenericModel):
             epoch_loss = np.mean(output_tensor_dict['loss'])
             print('Epoch loss: %s' % epoch_loss)
 
+
         return True
+
+    def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs):
+        if batch_index % 50 == 0 and is_training:
+            # Print reconstructed message
+            message = "I went to the farm."
+            np_message = cmd_dataset.convert_strings_to_numpy([message])
+            np_code = autoencoder.encode(np_message)
+            np_message_reconstruct = autoencoder.decode(np_code)
+            message_reconstruct = cmd_dataset.convert_numpy_to_strings(np_message_reconstruct)[0]
+            print('Example: %s | %s' % (message_reconstruct, message))
+
+            batch_loss = np.mean(output_batch_dict['loss'])
+            print('Batch loss: %s' % batch_loss)
 
 # EXECUTION ############################################################################################################
 
@@ -300,7 +314,7 @@ if __name__ == '__main__':
         # Reuse vocabulary when restoring from save
         saved_token_to_id = pickle.load(open(os.path.join(SAVE_DIR, 'vocabulary.pkl'), 'rb'))
 
-    cmd_dataset = cmd.CornellMovieDialoguesDataset(max_message_length=20, token_to_id=saved_token_to_id)
+    cmd_dataset = cmd.CornellMovieDialoguesDataset(max_message_length=10, token_to_id=saved_token_to_id)
 
     train_cmd, val_cmd = cmd_dataset.split(fraction=0.9, seed='hello world')
 
@@ -319,7 +333,7 @@ if __name__ == '__main__':
     pickle.dump(token_to_id, open(os.path.join(SAVE_DIR, 'vocabulary.pkl'), 'wb'))
 
     autoencoder = AutoEncoder(len(token_to_id), tensorboard_name='gmae', save_dir=SAVE_DIR,
-                              restore_from_save=RESTORE_FROM_SAVE)
+                              restore_from_save=RESTORE_FROM_SAVE, max_len=10)
 
     autoencoder.train(train_cmd, output_tensor_names=['train_prediction'],
                       parameter_dict={'keep prob': 0.9, 'learning rate': .0005},
