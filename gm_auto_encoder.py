@@ -298,8 +298,10 @@ class AutoEncoder(gmtk.GenericModel):
             # Print reconstructed message
             message = "I went to the farm."
             np_message = cmd_dataset.convert_strings_to_numpy([message])
-            np_code = autoencoder.encode(np_message)
-            np_message_reconstruct = autoencoder.decode(np_code)
+            # np_code = autoencoder.encode(np_message)
+            # np_message_reconstruct = autoencoder.decode(np_code)
+            result = self.predict({'message': np_message}, output_tensor_names=['prediction'])
+            np_message_reconstruct = result['prediction']
             message_reconstruct = cmd_dataset.convert_numpy_to_strings(np_message_reconstruct)[0]
             print('Example: %s | %s' % (message_reconstruct, message))
 
@@ -335,12 +337,12 @@ if __name__ == '__main__':
     autoencoder = AutoEncoder(len(token_to_id), tensorboard_name='gmae', save_dir=SAVE_DIR,
                               restore_from_save=RESTORE_FROM_SAVE, max_len=10)
 
-    autoencoder.train(train_cmd, output_tensor_names=['train_prediction'],
-                      parameter_dict={'keep prob': 0.9, 'learning rate': .0005},
-                      num_epochs=100, batch_size=20, verbose=True)
+    # autoencoder.train(train_cmd, output_tensor_names=['train_prediction'],
+    #                   parameter_dict={'keep prob': 0.9, 'learning rate': .0005},
+    #                   num_epochs=100, batch_size=20, verbose=True)
 
     def calculate_train_accuracy():
-        predictions = autoencoder.decode(autoencoder.encode(train_cmd))
+        predictions = autoencoder.predict(train_cmd, output_tensor_names=['prediction'])['prediction']
 
         # Here, I need to convert predictions back to English and print
         reconstructed_messages = sdt.convert_numpy_array_to_strings(predictions, id_to_token,
@@ -361,7 +363,7 @@ if __name__ == '__main__':
 
     def predict_using_autoencoder_and_calculate_accuracy():
 
-        val_predictions = autoencoder.decode(autoencoder.encode(val_cmd))
+        val_predictions = autoencoder.predict(val_cmd, output_tensor_names=['prediction'])['prediction']
 
         val_reconstructed_messages = sdt.convert_numpy_array_to_strings(val_predictions, id_to_token,
                                                                         stop_token=cmd_dataset.stop_token,
@@ -387,13 +389,14 @@ if __name__ == '__main__':
             print(np_message)
             np_code = autoencoder.encode(np_message)
             print(np_code[:10])
-            np_message_reconstruct = autoencoder.decode(np_code)
+            np_message_reconstruct = \
+                autoencoder.predict(np_message, output_tensor_names=['prediction'])['prediction']
             message_reconstruct = cmd_dataset.convert_numpy_to_strings(np_message_reconstruct)[0]
             print('Reconstruct: %s' % message_reconstruct)
 
-    # calculate_train_accuracy()
+    calculate_train_accuracy()
     print()
-    # predict_using_autoencoder_and_calculate_accuracy()
+    predict_using_autoencoder_and_calculate_accuracy()
     input_arbitrary_messages_into_autoencoder()
 
 
