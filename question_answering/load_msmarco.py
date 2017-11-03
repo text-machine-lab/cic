@@ -1,10 +1,11 @@
 """Copyright 2017 David Donahue. Loads MS Marco train dataset (without crashing). Explore dataset"""
-import config
 import json
-import resource
-import sys
 import pprint
+import resource
 import string
+import sys
+
+import config
 
 rsrc = resource.RLIMIT_DATA
 soft, hard = resource.getrlimit(rsrc)

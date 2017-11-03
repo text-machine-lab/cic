@@ -5,7 +5,7 @@ import os
 import tensorflow as tf
 
 import gemtk
-from gemtk_datasets import cornell_movie_dialogues as cmd
+from gemtk_datasets import cornell_movie_dialogues_dataset as cmd
 from question_answering import baseline_model_func, squad_dataset_tools as sdt
 
 RESTORE_FROM_SAVE = True

@@ -1,13 +1,15 @@
 """Copyright 2017 David Donahue. LSTM baseline for SQuAD dataset. Reads question with LSTM.
 Reads passage with LSTM. Outputs answer with LSTM."""
-import config
 import json
-import spacy
-import numpy as np
 import string
-import re
+
 import gensim
+import numpy as np
+import re
+import spacy
 import unittest2
+
+import config
 
 nlp = None
 

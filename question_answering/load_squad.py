@@ -1,7 +1,8 @@
 """Copyright 2017 David Donahue. Loads the SQuAD dataset for experimentation."""
-import config
 import json
 import pprint
+
+import config
 
 index = 0
 with open(config.SQUAD_TRAIN_SET) as squad_file:

@@ -1,32 +1,66 @@
 """David Donahue November 2017"""
-import gemtk
 import gensim
-import spacy
 import numpy as np
+import os
+import spacy
+import pickle
 
-class StringDataset(gemtk.Dataset):
-    def __init__(self, strings, max_length, token_to_id=None, stop_token='<STOP>'):
+import gemtk.gm
+
+
+class StringDataset(gemtk.gm.Dataset):
+    def __init__(self, strings, max_length, result_save_path=None, token_to_id=None, stop_token='<STOP>'):
+        """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
+        converts all strings into a large numpy array of indices.
+
+        Arguments:
+            strings - list of Python strings, interpretted as sentences
+            max_length - only strings containing max_length-1 will be kept (make room for stop token)
+            result_save_path - specify this if you want to save results of dataset preparation (saves time!)
+            token_to_id - specify your own vocabulary to process sentences with
+        """
         self.stop_token = stop_token
         self.max_message_length = max_length
         self.strings = strings
         print(max_length)
         self.nlp = spacy.load('en_core_web_sm')
 
-        # Create or reuse vocabulary
-        if token_to_id is None:
-            self.token_to_id, self.id_to_token = create_vocabulary(self.strings)
-            vocab_size = len(self.token_to_id)
-            self.token_to_id[self.stop_token] = vocab_size
-            self.id_to_token[vocab_size] = self.stop_token
+        if result_save_path is not None:
+            # Make sure result_save_path exists.
+            if not os.path.exists(result_save_path):
+                os.makedirs(result_save_path)
+
+        results_exist = (result_save_path is None)
+
+        if result_save_path is not None:
+            vocab_save_path = os.path.join(result_save_path, 'vocabulary.pkl')
+            sentences_save_path = os.path.join(result_save_path, 'sentences.pkl')
+            numpy_save_path = os.path.join(result_save_path, 'np_sentences.npy')
+
+            results_exist = (os.path.exists(vocab_save_path)
+                             and os.path.exists(sentences_save_path)
+                             and os.path.exists(numpy_save_path))
+
+        if results_exist and token_to_id is None:
+            # Load saved results
+            pass
         else:
-            self.token_to_id = token_to_id
-            self.id_to_token = {v: k for k, v in token_to_id.items()}
+            # Saved results don't exist, generate dataset numpy results and save them to disk.
+            # Alternatively, user has specified vocabulary so we need to reconvert strings to numpy.
+            if token_to_id is None:
+                self.token_to_id, self.id_to_token = create_vocabulary(self.strings)
+                vocab_size = len(self.token_to_id)
+                self.token_to_id[self.stop_token] = vocab_size
+                self.id_to_token[vocab_size] = self.stop_token
+            else:
+                self.token_to_id = token_to_id
+                self.id_to_token = {v: k for k, v in token_to_id.items()}
 
-        self.np_messages, self.formatted_and_filtered_strings = self.convert_strings_to_numpy(self.strings)
+            self.np_messages, self.formatted_and_filtered_strings = self.convert_strings_to_numpy(self.strings)
 
-            # = construct_numpy_from_messages(self.strings,
-            #                                              self.token_to_id,
-            #                                              self.max_message_length)
+            # Save results
+
+
 
     def convert_numpy_to_strings(self, np_messages):
         messages = convert_numpy_array_to_strings(np_messages, self.id_to_token,
