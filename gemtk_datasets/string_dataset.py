@@ -9,7 +9,7 @@ import gemtk.gm
 
 
 class StringDataset(gemtk.gm.Dataset):
-    def __init__(self, strings, max_length, result_save_path=None, token_to_id=None, stop_token='<STOP>'):
+    def __init__(self, strings, max_length, result_save_path=None, token_to_id=None, stop_token='<STOP>', regenerate=False):
         """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
         converts all strings into a large numpy array of indices.
 
@@ -17,12 +17,13 @@ class StringDataset(gemtk.gm.Dataset):
             strings - list of Python strings, interpretted as sentences
             max_length - only strings containing max_length-1 will be kept (make room for stop token)
             result_save_path - specify this if you want to save results of dataset preparation (saves time!)
-            token_to_id - specify your own vocabulary to process sentences with
+            token_to_id - specify your own vocabulary to process sentences
+            stop_token - specify token to place at end of strings
+            regenerate - if True, regenerate vocabulary and numpy arrays even if they exist in the save path
         """
         self.stop_token = stop_token
         self.max_message_length = max_length
         self.strings = strings
-        print(max_length)
         self.nlp = spacy.load('en_core_web_sm')
 
         if result_save_path is not None:
@@ -30,60 +31,107 @@ class StringDataset(gemtk.gm.Dataset):
             if not os.path.exists(result_save_path):
                 os.makedirs(result_save_path)
 
-        results_exist = (result_save_path is None)
-
         if result_save_path is not None:
-            vocab_save_path = os.path.join(result_save_path, 'vocabulary.pkl')
-            sentences_save_path = os.path.join(result_save_path, 'sentences.pkl')
-            numpy_save_path = os.path.join(result_save_path, 'np_sentences.npy')
+            # If the result path exists, make sure these paths are available.
+            self.vocab_save_path = os.path.join(result_save_path, 'vocabulary.pkl')
+            self.sentences_save_path = os.path.join(result_save_path, 'sentences.pkl')
+            self.numpy_save_path = os.path.join(result_save_path, 'np_sentences.npy')
 
-            results_exist = (os.path.exists(vocab_save_path)
-                             and os.path.exists(sentences_save_path)
-                             and os.path.exists(numpy_save_path))
+        results_exist = self._numpy_string_formatting_results_exist(result_save_path)
 
-        if results_exist and token_to_id is None:
-            # Load saved results
-            pass
+        # If results exist, we will save time and load everything from the save directory. Otherwise,
+        # regenerate the vocabulary and numpy results and save them.
+        if results_exist and token_to_id is None and not regenerate:
+            print('Loading vocabulary, strings, and numpy-encoded strings from save path.')
+
+            self.token_to_id = pickle.load(open(self.vocab_save_path, 'rb'))
+            self.id_to_token = {v: k for k, v in self.token_to_id.items()}
+            self.formatted_and_filtered_strings = pickle.load(open(self.sentences_save_path, 'rb'))
+            self.np_messages = np.load(self.numpy_save_path)
         else:
-            # Saved results don't exist, generate dataset numpy results and save them to disk.
-            # Alternatively, user has specified vocabulary so we need to reconvert strings to numpy.
             if token_to_id is None:
+                # Generate vocabulary ourselves.
                 self.token_to_id, self.id_to_token = create_vocabulary(self.strings)
                 vocab_size = len(self.token_to_id)
                 self.token_to_id[self.stop_token] = vocab_size
                 self.id_to_token[vocab_size] = self.stop_token
             else:
+                # Use user-defined vocabulary.
                 self.token_to_id = token_to_id
                 self.id_to_token = {v: k for k, v in token_to_id.items()}
 
             self.np_messages, self.formatted_and_filtered_strings = self.convert_strings_to_numpy(self.strings)
 
-            # Save results
+            # Save results so we can load them next time.
+            if result_save_path is not None:
+                print('Saving vocabulary, strings, and numpy-encoded strings.')
+                pickle.dump(self.token_to_id, open(self.vocab_save_path, 'wb'))
+                pickle.dump(self.formatted_and_filtered_strings, open(self.sentences_save_path, 'wb'))
+                np.save(self.numpy_save_path, self.np_messages)
 
+    def _numpy_string_formatting_results_exist(self, result_save_path):
+        """Check that all save files exist, return true in this case.
 
+        Arguments:
+            - result_save_path: directory to check for processing results
+
+        Returns: boolean indicating if these strings have already been converted to numpy and saved,
+        and all associated files exist.
+        """
+        results_exist = False
+        if result_save_path is not None:
+            self.vocab_save_path = os.path.join(result_save_path, 'vocabulary.pkl')
+            self.sentences_save_path = os.path.join(result_save_path, 'sentences.pkl')
+            self.numpy_save_path = os.path.join(result_save_path, 'np_sentences.npy')
+
+            results_exist = (os.path.isfile(self.vocab_save_path)
+                             and os.path.isfile(self.sentences_save_path)
+                             and os.path.isfile(self.numpy_save_path))
+
+        return results_exist
 
     def convert_numpy_to_strings(self, np_messages):
+        """Convert messages in numpy format back to the strings they represent.
+
+        Arguments:
+            - np_messages: ndarray input
+
+        Returns: a list of strings."""
         messages = convert_numpy_array_to_strings(np_messages, self.id_to_token,
                                                   self.stop_token,
                                                   keep_stop_token=False)
         return messages
 
     def convert_strings_to_numpy(self, strings):
+        """Complete the entire process of tokenizing strings, removing strings exceeding max length, and
+        constructing numpy arrays.
+
+        Arguments:
+            - strings: a list of strings of text to be converted
+
+        Returns: an array of converted strings, where rows are strings and columns are words/tokens in each string.
+        Also returns a list of tokenized strings, representing the pruned/tokenized final strings that were converted.
+        This list of strings is good for debugging, viewing and comparison purposes."""
+
         tk_token_strings = []
         for each_string in strings:
             tk_string = self.nlp.tokenizer(each_string.lower())
             tk_tokens = [str(token) for token in tk_string if str(token) != ' ' and str(token) in self.token_to_id]
             tk_tokens += [self.stop_token]
-            if len(tk_tokens) < self.max_message_length:
+            if len(tk_tokens) <= self.max_message_length:
                 tk_token_strings.append(tk_tokens)
+
         np_messages = construct_numpy_from_messages(tk_token_strings, self.token_to_id, self.max_message_length)
         formatted_and_filtered_strings = [' '.join(tk_token_string) for tk_token_string in tk_token_strings]
         return np_messages, formatted_and_filtered_strings
 
     def get_vocabulary(self):
+        """Returns the internal vocabulary used by this StringDataset object."""
         return self.token_to_id, self.id_to_token
 
     def get_stop_token(self):
+        """Return the stop token appended onto each converted string. Signifies the end of the string
+        for model recognition purposes."""
         return self.stop_token
 
     def __getitem__(self, index):

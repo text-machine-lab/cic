@@ -2,7 +2,6 @@
 import os
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-print(__file__)
 CORNELL_MOVIE_DIR = os.path.join(DATA_DIR, 'cornell movie-dialogs corpus/')
 
 CORNELL_MOVIE_LINES_FILE = os.path.join(CORNELL_MOVIE_DIR, 'movie_lines.txt')
