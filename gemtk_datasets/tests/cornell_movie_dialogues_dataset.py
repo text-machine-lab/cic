@@ -1,7 +1,7 @@
-import unittest2
+
 
 from gemtk_datasets.cornell_movie_dialogues_dataset import *
-
+import unittest2
 
 class CornellMovieDialoguesTest(unittest2.TestCase):
     def test_empty(self):
@@ -20,15 +20,13 @@ class CornellMovieDialoguesTest(unittest2.TestCase):
         for index in range(m):
             each_example = cmd_dataset[index]
             each_np_message = np.reshape(each_example['message'], newshape=(-1, 30))
-            each_reconstructed_message = sdt.convert_numpy_array_to_strings(each_np_message, id_to_token,
-                                                                            stop_token=cmd_dataset.stop_token,
-                                                                            keep_stop_token=True)[0]
+            each_reconstructed_message = cmd_dataset.convert_numpy_to_strings(each_np_message)[0]
+
             each_message = cmd_dataset.formatted_and_filtered_strings[index]
-            if len(cmd_dataset.formatted_and_filtered_strings[index].split()) <= 30:
-                if each_message != each_reconstructed_message:
-                    print(each_message)
-                    print(each_reconstructed_message)
-                    exit()
+            if (each_message) != each_reconstructed_message:
+                print(each_message)
+                print(each_reconstructed_message)
+                exit()
 
     def test_len(self):
         cmd_dataset = CornellMovieDialoguesDataset(config.CORNELL_MOVIE_LINES_FILE, max_message_length=10)

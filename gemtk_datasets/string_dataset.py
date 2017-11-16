@@ -122,7 +122,7 @@ class StringDataset(gemtk.gm.Dataset):
                 tk_token_strings.append(tk_tokens)
 
         np_messages = construct_numpy_from_messages(tk_token_strings, self.token_to_id, self.max_message_length)
-        formatted_and_filtered_strings = [' '.join(tk_token_string) for tk_token_string in tk_token_strings]
+        formatted_and_filtered_strings = [' '.join(tk_token_string[:-1]) for tk_token_string in tk_token_strings]
         return np_messages, formatted_and_filtered_strings
 
     def get_vocabulary(self):
@@ -142,6 +142,13 @@ class StringDataset(gemtk.gm.Dataset):
 
 
 def create_vocabulary(messages):
+    """Splits messages into tokens. When a new token is discovered,
+    adds that token to a growing vocabulary. Each token is associated with
+    an index.
+
+    Returns: A dictionary mapping each token to its corresponding index, and a
+    dictionary mapping each index to its corresponding token."""
+
     message_tokens = [message.split() for message in messages]
     token_to_id = gensim.corpora.Dictionary(documents=message_tokens).token2id
     id_to_token = {v: k for k, v in token_to_id.items()}

@@ -3,6 +3,7 @@ from gemtk_datasets import string_dataset
 
 
 class UKWacDataset(string_dataset.StringDataset):
+
     def __init__(self, ukwac_path, result_save_path=None, token_to_id=None,
                  max_length=30, regenerate=False):
         """Instantiate UK Wac dataset from raw ukwac_path file (slow). Store and load
@@ -26,7 +27,7 @@ class UKWacDataset(string_dataset.StringDataset):
         results_exist = self._numpy_string_formatting_results_exist(result_save_path)
         #
         filtered_sentences = []
-        if not results_exist:
+        if not results_exist or regenerate or token_to_id is not None:
             for index, line in enumerate(open(self.ukwac_path, 'r', encoding='utf-8', errors='ignore')):
                 sentences = line.split(' . ')
                 for each_sentence in sentences:
