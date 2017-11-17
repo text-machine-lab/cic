@@ -29,7 +29,7 @@ class UKWacDataset(string_dataset.StringDataset):
         filtered_sentences = []
         if not results_exist or regenerate or token_to_id is not None:
             for index, line in enumerate(open(self.ukwac_path, 'r', encoding='utf-8', errors='ignore')):
-                sentences = line.split(' . ')
+                sentences = line.split('. ')
                 for each_sentence in sentences:
                     each_sentence = each_sentence.lower()
                     #print(each_sentence)
@@ -44,8 +44,6 @@ class UKWacDataset(string_dataset.StringDataset):
                         each_sentence = each_sentence.strip()
                         if max_length is None or len(each_sentence.split()) < max_length:
                             filtered_sentences.append(each_sentence)
-
-            print('Number of filtered sentences: %s' % len(filtered_sentences))
 
         # Use StringDataset class to automatically tokenize and convert strings to numpy format.
         super().__init__(filtered_sentences,

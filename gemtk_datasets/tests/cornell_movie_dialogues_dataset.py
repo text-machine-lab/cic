@@ -16,13 +16,13 @@ class CornellMovieDialoguesTest(unittest2.TestCase):
         assert len(token_to_id) == len(id_to_token)
         nlp = spacy.load('en_core_web_sm')
         m = len(cmd_dataset)
-        assert m == len(cmd_dataset.formatted_and_filtered_strings)
+        assert m == len(cmd_dataset.messages)
         for index in range(m):
             each_example = cmd_dataset[index]
             each_np_message = np.reshape(each_example['message'], newshape=(-1, 30))
             each_reconstructed_message = cmd_dataset.convert_numpy_to_strings(each_np_message)[0]
 
-            each_message = cmd_dataset.formatted_and_filtered_strings[index]
+            each_message = cmd_dataset.messages[index]
             if (each_message) != each_reconstructed_message:
                 print(each_message)
                 print(each_reconstructed_message)

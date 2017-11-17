@@ -46,7 +46,7 @@ class StringDataset(gemtk.gm.Dataset):
 
             self.token_to_id = pickle.load(open(self.vocab_save_path, 'rb'))
             self.id_to_token = {v: k for k, v in self.token_to_id.items()}
-            self.formatted_and_filtered_strings = pickle.load(open(self.sentences_save_path, 'rb'))
+            self.messages = pickle.load(open(self.sentences_save_path, 'rb'))
             self.np_messages = np.load(self.numpy_save_path)
         else:
             if token_to_id is None:
@@ -60,13 +60,13 @@ class StringDataset(gemtk.gm.Dataset):
                 self.token_to_id = token_to_id
                 self.id_to_token = {v: k for k, v in token_to_id.items()}
 
-            self.np_messages, self.formatted_and_filtered_strings = self.convert_strings_to_numpy(self.strings)
+            self.np_messages, self.messages = self.convert_strings_to_numpy(self.strings)
 
             # Save results so we can load them next time.
             if result_save_path is not None:
                 print('Saving vocabulary, strings, and numpy-encoded strings.')
                 pickle.dump(self.token_to_id, open(self.vocab_save_path, 'wb'))
-                pickle.dump(self.formatted_and_filtered_strings, open(self.sentences_save_path, 'wb'))
+                pickle.dump(self.messages, open(self.sentences_save_path, 'wb'))
                 np.save(self.numpy_save_path, self.np_messages)
 
     def _numpy_string_formatting_results_exist(self, result_save_path):

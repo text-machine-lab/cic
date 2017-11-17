@@ -4,15 +4,11 @@ import numpy as np
 import os
 import tensorflow as tf
 
-import gemtk
-from gemtk_datasets import cornell_movie_dialogues_dataset as cmd
+import gemtk.gm
+
 from question_answering import baseline_model_func, squad_dataset_tools as sdt
 
-RESTORE_FROM_SAVE = True
-SAVE_DIR = './data/autoencoder/first/'
-
-
-class AutoEncoder(gemtk.GenericModel):
+class AutoEncoder(gemtk.gm.GenericModel):
     def __init__(self, vocab_size, max_len=20, rnn_size=500, emb_size=200, encoder=True, decoder=True, **kwargs):
         self.vocab_size = vocab_size
         self.max_len = max_len
@@ -290,114 +286,7 @@ class AutoEncoder(gemtk.GenericModel):
             epoch_loss = np.mean(output_tensor_dict['loss'])
             print('Epoch loss: %s' % epoch_loss)
 
-
         return True
-
-    def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training, **kwargs):
-        if batch_index % 50 == 0 and is_training:
-            # Print reconstructed message
-            message = "I went to the farm."
-            np_message = cmd_dataset.convert_strings_to_numpy([message])
-            # np_code = autoencoder.encode(np_message)
-            # np_message_reconstruct = autoencoder.decode(np_code)
-            result = self.predict({'message': np_message}, output_tensor_names=['prediction'])
-            np_message_reconstruct = result['prediction']
-            message_reconstruct = cmd_dataset.convert_numpy_to_strings(np_message_reconstruct)[0]
-            print('Example: %s | %s' % (message_reconstruct, message))
-
-            batch_loss = np.mean(output_batch_dict['loss'])
-            print('Batch loss: %s' % batch_loss)
-
-# EXECUTION ############################################################################################################
-
-if __name__ == '__main__':
-    saved_token_to_id = None
-    if RESTORE_FROM_SAVE:
-        # Reuse vocabulary when restoring from save
-        saved_token_to_id = pickle.load(open(os.path.join(SAVE_DIR, 'vocabulary.pkl'), 'rb'))
-
-    cmd_dataset = cmd.CornellMovieDialoguesDataset(max_message_length=10, token_to_id=saved_token_to_id)
-
-    train_cmd, val_cmd = cmd_dataset.split(fraction=0.9, seed='hello world')
-
-    print('Number of training examples: %s' % len(train_cmd))
-    print('Number of validation examples: %s' % len(val_cmd))
-
-    token_to_id, id_to_token = cmd_dataset.get_vocabulary()
-
-    if RESTORE_FROM_SAVE:
-        assert saved_token_to_id == token_to_id
-
-    for i in range(10):
-        print(id_to_token[i])
-
-    # Save vocabulary
-    pickle.dump(token_to_id, open(os.path.join(SAVE_DIR, 'vocabulary.pkl'), 'wb'))
-
-    autoencoder = AutoEncoder(len(token_to_id), tensorboard_name='gmae', save_dir=SAVE_DIR,
-                              restore_from_save=RESTORE_FROM_SAVE, max_len=10)
-
-    # autoencoder.train(train_cmd, output_tensor_names=['train_prediction'],
-    #                   parameter_dict={'keep prob': 0.9, 'learning rate': .0005},
-    #                   num_epochs=100, batch_size=20, verbose=True)
-
-    def calculate_train_accuracy():
-        predictions = autoencoder.predict(train_cmd, output_tensor_names=['prediction'])['prediction']
-
-        # Here, I need to convert predictions back to English and print
-        reconstructed_messages = sdt.convert_numpy_array_to_strings(predictions, id_to_token,
-                                                                    stop_token=cmd_dataset.stop_token,
-                                                                    keep_stop_token=True)
-
-        for i in range(10):
-            print(' '.join(cmd_dataset.messages[train_cmd.indices[i]]) + " | " + reconstructed_messages[i])
-
-        num_train_correct = 0
-        for i in range(len(reconstructed_messages)):
-            original_message = ' '.join(cmd_dataset.messages[train_cmd.indices[i]])
-            if original_message == reconstructed_messages[i]:
-                num_train_correct += 1
-
-        print('Train EM accuracy: %s' % (num_train_correct / len(reconstructed_messages)))
-
-
-    def predict_using_autoencoder_and_calculate_accuracy():
-
-        val_predictions = autoencoder.predict(val_cmd, output_tensor_names=['prediction'])['prediction']
-
-        val_reconstructed_messages = sdt.convert_numpy_array_to_strings(val_predictions, id_to_token,
-                                                                        stop_token=cmd_dataset.stop_token,
-                                                                        keep_stop_token=True)
-        for i in range(10):
-            print(' '.join(cmd_dataset.messages[val_cmd.indices[i]]) + " | " + val_reconstructed_messages[i])
-
-        num_val_correct = 0
-        for i in range(len(val_reconstructed_messages)):
-            original_message = ' '.join(cmd_dataset.messages[val_cmd.indices[i]])
-            if original_message == val_reconstructed_messages[i]:
-                num_val_correct += 1
-
-        print('Validation EM accuracy: %s' % (num_val_correct / len(val_reconstructed_messages)))
-
-
-    def input_arbitrary_messages_into_autoencoder():
-        print('Testing the autoencoder...')
-        # Test autoencoder using stdin
-        while True:
-            message = input('Message: ')
-            np_message = cmd_dataset.convert_strings_to_numpy([message])
-            print(np_message)
-            np_code = autoencoder.encode(np_message)
-            print(np_code[:10])
-            np_message_reconstruct = \
-                autoencoder.predict(np_message, output_tensor_names=['prediction'])['prediction']
-            message_reconstruct = cmd_dataset.convert_numpy_to_strings(np_message_reconstruct)[0]
-            print('Reconstruct: %s' % message_reconstruct)
-
-    calculate_train_accuracy()
-    print()
-    predict_using_autoencoder_and_calculate_accuracy()
-    input_arbitrary_messages_into_autoencoder()
 
 
 
