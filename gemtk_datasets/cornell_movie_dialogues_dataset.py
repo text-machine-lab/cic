@@ -1,6 +1,6 @@
 """Stores Dataset subclass for the Cornell movie dialogues dataset."""
 
-from cic.gemtk_datasets import StringDataset
+from cic.gemtk_datasets.string_dataset import StringDataset
 
 
 class CornellMovieDialoguesDataset(StringDataset):

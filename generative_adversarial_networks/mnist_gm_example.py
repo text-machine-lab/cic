@@ -6,11 +6,12 @@ import timeit
 import numpy as np
 import tensorflow as tf
 
-import gemtk
+import arcadian.gm
+from cic.gemtk_datasets.mnist_datasets import MNISTTrainSet, MNISTTestSet
 
 
 def example_basic_mnist():
-    class MNISTModel(gemtk.GenericModel):
+    class MNISTModel(arcadian.gm.GenericModel):
         def build(self):
             """Copied from Tensorflow tutorial MNIST for ML Beginners example."""
             x = tf.placeholder(tf.float32, [None, 784])
@@ -29,8 +30,8 @@ def example_basic_mnist():
 
     mnist_model = MNISTModel()
 
-    mnist_train_set = gemtk.MNISTTrainSet()
-    mnist_test_set = gemtk.MNISTTestSet()
+    mnist_train_set = MNISTTrainSet()
+    mnist_test_set = MNISTTestSet()
 
     train_dict = mnist_model.train(mnist_train_set, num_epochs=1)
 
@@ -46,7 +47,7 @@ def example_advanced_mnist_batch():
 
 
 def example_advanced_mnist(use_batch_mnist_dataset=False):
-    class ConvMNISTModel(gemtk.GenericModel):
+    class ConvMNISTModel(arcadian.GenericModel):
         def build(self):
             """Copied from Tensorflow tutorial Deep MNIST example."""
             def weight_variable(shape):
@@ -108,11 +109,11 @@ def example_advanced_mnist(use_batch_mnist_dataset=False):
     mnist_model = ConvMNISTModel()
 
     if use_batch_mnist_dataset:
-        mnist_train_set = gemtk.BatchMNISTTrainSet()
+        mnist_train_set = arcadian.BatchMNISTTrainSet()
     else:
-        mnist_train_set = gemtk.MNISTTrainSet()
+        mnist_train_set = arcadian.MNISTTrainSet()
 
-    mnist_test_set = gemtk.MNISTTestSet()
+    mnist_test_set = arcadian.MNISTTestSet()
 
     def train():
         train_dict = mnist_model.train(mnist_train_set, num_epochs=10, parameter_dict={'keep prob': .5})

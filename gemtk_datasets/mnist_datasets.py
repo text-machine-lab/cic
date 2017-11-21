@@ -1,6 +1,6 @@
 from tensorflow.examples.tutorials.mnist import input_data
 
-from gemtk import DictionaryDataset
+from arcadian.dataset import DictionaryDataset
 
 
 class MNISTTrainSet(DictionaryDataset):

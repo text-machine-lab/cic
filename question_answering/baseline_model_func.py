@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 import unittest2
-from question_answering import squad_dataset_tools as sdt
+from cic.question_answering import squad_dataset_tools as sdt
 
 from cic import config
 from cic.chat_bots import chat_model_func

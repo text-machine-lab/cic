@@ -1,11 +1,11 @@
 import numpy as np
 import tensorflow as tf
 
-import gemtk.gm
+import arcadian.gm
 from cic.question_answering import baseline_model_func
 
 
-class AutoEncoder(gemtk.gm.GenericModel):
+class AutoEncoder(arcadian.gm.GenericModel):
     def __init__(self, vocab_size, max_len=20, rnn_size=500, emb_size=200, encoder=True, decoder=True, **kwargs):
         self.vocab_size = vocab_size
         self.max_len = max_len

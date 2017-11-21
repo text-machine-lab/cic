@@ -2,10 +2,10 @@
 import pickle
 
 import os
-import question_answering.squad_dataset_tools as sdt
+import cic.question_answering.squad_dataset_tools as sdt
 
 from cic import config
-from cic.autoencoders import AutoEncoder
+from cic.autoencoders.gm_auto_encoder import AutoEncoder
 from cic.gemtk_datasets import cornell_movie_dialogues_dataset as cmd
 
 RESTORE_FROM_SAVE = False

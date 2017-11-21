@@ -7,8 +7,8 @@ import sys
 import numpy as np
 import os
 import random
-from question_answering import baseline_model_func, squad_dataset_tools as sdt
-from question_answering.baseline_model_func import LEARNING_RATE, NUM_PARAGRAPHS, RNN_HIDDEN_DIM, NUM_EXAMPLES_TO_PRINT, \
+from cic.question_answering import baseline_model_func, squad_dataset_tools as sdt
+from cic.question_answering.baseline_model_func import LEARNING_RATE, NUM_PARAGRAPHS, RNN_HIDDEN_DIM, NUM_EXAMPLES_TO_PRINT, \
     TRAIN_FRAC, \
     VALIDATE_PROPER_INPUTS, RESTORE_FROM_SAVE, TRAIN_MODEL_BEFORE_PREDICTION, PREDICT_ON_TRAINING_EXAMPLES, NUM_EPOCHS, \
     PRINT_TRAINING_EXAMPLES, PRINT_VALIDATION_EXAMPLES, PRINT_ACCURACY_EVERY_N_BATCHES, BATCH_SIZE, KEEP_PROB, \
