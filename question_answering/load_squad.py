@@ -2,7 +2,7 @@
 import json
 import pprint
 
-import config
+from cic import config
 
 index = 0
 with open(config.SQUAD_TRAIN_SET) as squad_file:

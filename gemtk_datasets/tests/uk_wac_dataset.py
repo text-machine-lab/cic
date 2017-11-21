@@ -1,8 +1,9 @@
 """ Example driver program for constructing a UKWacDataset object. """
-from gemtk_datasets.uk_wac_dataset import UKWacDataset
-import config
-import os
 import numpy as np
+import os
+
+from cic import config
+from cic.gemtk_datasets import UKWacDataset
 
 ukwac_path = '/data2/arogers/Corpora/En/UkWac/Plain-txt/ukwac_subset_100M.txt'
 result_path = os.path.join(config.DATA_DIR, 'ukwac')

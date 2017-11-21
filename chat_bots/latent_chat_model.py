@@ -6,11 +6,12 @@ import pickle
 import numpy as np
 import os
 import spacy
+from cic.chat_bots import latent_chat_func
+from cic.question_answering import squad_dataset_tools as sdt
 
-import config
-from autoencoders import auto_encoder_func as aef
-from chat_bots import chat_model_func, latent_chat_func
-from question_answering import squad_dataset_tools as sdt
+from cic import config
+from cic.autoencoders import auto_encoder_func as aef
+from cic.chat_bots import chat_model_func
 
 
 def parse_command_line_arguments():

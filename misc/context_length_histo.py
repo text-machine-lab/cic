@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
-
-import config
 from question_answering import squad_dataset_tools as sdt
+
+from cic import config
 
 paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
 tk_paragraphs = sdt.tokenize_paragraphs(paragraphs)

@@ -2,10 +2,10 @@
 import numpy as np
 import tensorflow as tf
 import unittest2
-
-import config
-from chat_bots import chat_model_func
 from question_answering import squad_dataset_tools as sdt
+
+from cic import config
+from cic.chat_bots import chat_model_func
 
 LEARNING_RATE = .0001
 NUM_PARAGRAPHS = None

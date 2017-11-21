@@ -1,14 +1,13 @@
 """David Donahue November 2017"""
+import pickle
+
 import gensim
 import numpy as np
 import os
 import spacy
-import pickle
-
-import gemtk.gm
 
 
-class StringDataset(gemtk.gm.Dataset):
+class StringDataset(cic.gemtk.gm.Dataset):
     def __init__(self, strings, max_length, result_save_path=None, token_to_id=None, stop_token='<STOP>', regenerate=False):
         """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
         converts all strings into a large numpy array of indices.

@@ -10,14 +10,15 @@ import os
 import random
 import spacy
 import tensorflow as tf
+from cic.chat_bots import movie_dialogue_dataset_tools as mddt
+from cic.question_answering import baseline_model_func, squad_dataset_tools as sdt
 
-import config
-from autoencoders import auto_encoder_func
-from autoencoders.auto_encoder_func import MAX_MESSAGE_LENGTH, MAX_NUMBER_OF_MESSAGES, STOP_TOKEN, RNN_HIDDEN_DIM, \
+from cic import config
+from cic.autoencoders import auto_encoder_func
+from cic.autoencoders.auto_encoder_func import MAX_MESSAGE_LENGTH, MAX_NUMBER_OF_MESSAGES, STOP_TOKEN, RNN_HIDDEN_DIM, \
     LEARNED_EMBEDDING_SIZE, LEARNING_RATE, KEEP_PROB, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
     NUM_EXAMPLES_TO_PRINT, VALIDATE_ENCODER_AND_DECODER, SAVE_TENSORBOARD_VISUALIZATION, SHUFFLE_EXAMPLES
-from chat_bots import chat_model_func, movie_dialogue_dataset_tools as mddt
-from question_answering import baseline_model_func, squad_dataset_tools as sdt
+from cic.chat_bots import chat_model_func
 
 # ARGUMENTS ############################################################################################################
 parser = optparse.OptionParser()

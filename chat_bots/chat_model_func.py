@@ -2,10 +2,10 @@
 import numpy as np
 import random
 import unittest2
+from cic.question_answering import squad_dataset_tools as sdt
 
-import config
-from chat_bots import movie_dialogue_dataset_tools as mddt
-from question_answering import squad_dataset_tools as sdt
+from cic import config
+from cic.chat_bots import movie_dialogue_dataset_tools as mddt
 
 LEARNING_RATE = .0008
 NUM_CONVERSATIONS = None

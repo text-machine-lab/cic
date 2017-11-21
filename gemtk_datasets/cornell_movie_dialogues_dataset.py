@@ -1,11 +1,6 @@
 """Stores Dataset subclass for the Cornell movie dialogues dataset."""
-import numpy as np
-import spacy
-import unittest2
 
-import config
-from gemtk_datasets.string_dataset import StringDataset
-from question_answering import squad_dataset_tools as sdt
+from cic.gemtk_datasets import StringDataset
 
 
 class CornellMovieDialoguesDataset(StringDataset):

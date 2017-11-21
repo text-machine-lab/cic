@@ -1,12 +1,9 @@
-import pickle
-
 import numpy as np
-import os
 import tensorflow as tf
 
 import gemtk.gm
+from cic.question_answering import baseline_model_func
 
-from question_answering import baseline_model_func, squad_dataset_tools as sdt
 
 class AutoEncoder(gemtk.gm.GenericModel):
     def __init__(self, vocab_size, max_len=20, rnn_size=500, emb_size=200, encoder=True, decoder=True, **kwargs):

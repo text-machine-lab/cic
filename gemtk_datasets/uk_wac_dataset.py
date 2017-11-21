@@ -1,5 +1,5 @@
 """UK WAC dataset."""
-from gemtk_datasets import string_dataset
+from cic.gemtk_datasets import string_dataset
 
 
 class UKWacDataset(string_dataset.StringDataset):

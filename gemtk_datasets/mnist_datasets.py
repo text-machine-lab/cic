@@ -1,5 +1,7 @@
-from gemtk.dataset import DictionaryDataset
 from tensorflow.examples.tutorials.mnist import input_data
+
+from gemtk import DictionaryDataset
+
 
 class MNISTTrainSet(DictionaryDataset):
     """Create dataset of MNIST examples for training.

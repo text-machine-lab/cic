@@ -1,5 +1,7 @@
 import unittest2
-from gemtk_datasets.mnist_datasets import MNISTTestSet
+
+from cic.gemtk_datasets.mnist_datasets import MNISTTestSet
+
 
 class MNISTDatasetsTest(unittest2.TestCase):
     def test_mnist_split(self):

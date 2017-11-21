@@ -4,8 +4,8 @@ import time
 import numpy as np
 import tensorflow as tf
 
-from chat_bots import chat_model_func
-from question_answering import baseline_model_func
+from cic.chat_bots import chat_model_func
+from cic.question_answering import baseline_model_func
 
 MAX_MESSAGE_LENGTH = 10
 MAX_NUMBER_OF_MESSAGES = None

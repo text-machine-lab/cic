@@ -1,9 +1,10 @@
 """Train the Generic Model autoencoder on the UKWac dataset. Evaluate its
 accuracy."""
 import os
-import config as config
-from autoencoders.gm_auto_encoder import AutoEncoder
-from gemtk_datasets.uk_wac_dataset import UKWacDataset
+
+from cic import config as config
+from cic.autoencoders.gm_auto_encoder import AutoEncoder
+from cic.gemtk_datasets import UKWacDataset
 
 MAX_SENTENCE_LENGTH = 10
 SAVE_DIR = os.path.join(config.DATA_DIR, 'ukwac_autoencoder')

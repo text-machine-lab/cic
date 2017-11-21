@@ -1,10 +1,13 @@
 """GenericModel class is used to train an MNIST classifier based on the Tensorflow MNIST tutorial.
 Create MNIST model, add per-batch action to print the batch number. Train it and then calculate
 training and testing accuracies."""
-import gemtk
-import tensorflow as tf
-import numpy as np
 import timeit
+
+import numpy as np
+import tensorflow as tf
+
+import gemtk
+
 
 def example_basic_mnist():
     class MNISTModel(gemtk.GenericModel):

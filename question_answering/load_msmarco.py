@@ -5,7 +5,7 @@ import resource
 import string
 import sys
 
-import config
+from cic import config
 
 rsrc = resource.RLIMIT_DATA
 soft, hard = resource.getrlimit(rsrc)

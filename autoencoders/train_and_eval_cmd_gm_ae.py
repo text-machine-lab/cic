@@ -1,10 +1,12 @@
 # EXECUTION ############################################################################################################
-from gemtk_datasets import cornell_movie_dialogues_dataset as cmd
 import pickle
+
 import os
-from autoencoders.gm_auto_encoder import AutoEncoder
 import question_answering.squad_dataset_tools as sdt
-import config
+
+from cic import config
+from cic.autoencoders import AutoEncoder
+from cic.gemtk_datasets import cornell_movie_dialogues_dataset as cmd
 
 RESTORE_FROM_SAVE = False
 SAVE_DIR = './data/autoencoder/first/'

@@ -4,14 +4,15 @@ import numpy as np
 import os
 import spacy
 import tensorflow as tf
+from cic.question_answering import baseline_model_func, squad_dataset_tools as sdt
 
-import config
-from chat_bots import chat_model_func
-from chat_bots.chat_model_func import LEARNING_RATE, NUM_EXAMPLES_TO_PRINT, MAX_MESSAGE_LENGTH, LEARNED_EMBEDDING_SIZE, \
+from cic import config
+from cic.chat_bots import chat_model_func
+from cic.chat_bots.chat_model_func import LEARNING_RATE, NUM_EXAMPLES_TO_PRINT, MAX_MESSAGE_LENGTH, \
+    LEARNED_EMBEDDING_SIZE, \
     KEEP_PROB, \
     RNN_HIDDEN_DIM, TRAIN_FRACTION, BATCH_SIZE, NUM_EPOCHS, RESTORE_FROM_SAVE, REVERSE_INPUT_MESSAGE, STOP_TOKEN, \
     SEQ2SEQ_IMPLEMENTATION
-from question_answering import baseline_model_func, squad_dataset_tools as sdt
 
 # PRE-PROCESSING #######################################################################################################
 

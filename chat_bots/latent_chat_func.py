@@ -1,11 +1,11 @@
 """Supporting functions, classes and constants for latent_chat_model.py"""
 import numpy as np
 import tensorflow as tf
+from cic.question_answering import baseline_model_func, squad_dataset_tools as sdt
 
-import config
-from autoencoders import auto_encoder_func as aef
-from chat_bots import chat_model_func
-from question_answering import baseline_model_func, squad_dataset_tools as sdt
+from cic import config
+from cic.autoencoders import auto_encoder_func as aef
+from cic.chat_bots import chat_model_func
 
 LEARNING_RATE = .00001
 NUM_EXAMPLES = None

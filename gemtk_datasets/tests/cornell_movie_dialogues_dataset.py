@@ -1,6 +1,3 @@
-
-
-from gemtk_datasets.cornell_movie_dialogues_dataset import *
 import unittest2
 
 class CornellMovieDialoguesTest(unittest2.TestCase):

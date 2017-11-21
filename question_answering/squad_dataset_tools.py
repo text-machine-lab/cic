@@ -9,7 +9,7 @@ import re
 import spacy
 import unittest2
 
-import config
+from cic import config
 
 nlp = None
 

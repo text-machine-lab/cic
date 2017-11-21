@@ -7,8 +7,6 @@ import sys
 import numpy as np
 import os
 import random
-
-import config
 from question_answering import baseline_model_func, squad_dataset_tools as sdt
 from question_answering.baseline_model_func import LEARNING_RATE, NUM_PARAGRAPHS, RNN_HIDDEN_DIM, NUM_EXAMPLES_TO_PRINT, \
     TRAIN_FRAC, \
@@ -17,6 +15,8 @@ from question_answering.baseline_model_func import LEARNING_RATE, NUM_PARAGRAPHS
     STOP_TOKEN_REWARD, TURN_OFF_TF_LOGGING, USE_SPACY_NOT_GLOVE, SHUFFLE_EXAMPLES, SAVE_VALIDATION_PREDICTIONS, \
     PRODUCE_OUTPUT_PREDICTIONS_FILE, REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH, \
     REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS, SEED
+
+from cic import config
 
 sdt.initialize_nlp()
 

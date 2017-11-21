@@ -7,7 +7,7 @@ import os
 import praw
 import re
 
-import config
+from cic import config
 
 MAX_COMMENT_LENGTH = 20
 MAX_RAW_COMMENTS = 100000
