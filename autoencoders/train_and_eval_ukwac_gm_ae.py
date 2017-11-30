@@ -13,11 +13,13 @@ ex = Experiment('ukwac')
 def config():
     max_sentence_length = 10
     save_dir = os.path.join(cic.config.DATA_DIR, 'ukwac_autoencoder2')
-    restore_from_save = False
-    num_epochs = 1000
+    print('Save directory: %s' % save_dir)
+    restore_from_save = True
+    num_epochs = 0
     regenerate_dataset = False  # If problem with dataset, try this first
     rnn_size = 600
     learning_rate = 0.0005
+
 
 @ex.automain
 def main(max_sentence_length, save_dir,

@@ -9,7 +9,8 @@ import arcadian.dataset
 
 
 class StringDataset(arcadian.dataset.Dataset):
-    def __init__(self, strings, max_length, result_save_path=None, token_to_id=None, stop_token='<STOP>', regenerate=False):
+    def __init__(self, strings, max_length, result_save_path=None, token_to_id=None,
+                 stop_token='<STOP>', unk_token=None, regenerate=False):
         """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
         converts all strings into a large numpy array of indices.
 
@@ -19,9 +20,11 @@ class StringDataset(arcadian.dataset.Dataset):
             result_save_path - specify this if you want to save results of dataset preparation (saves time!)
             token_to_id - specify your own vocabulary to process sentences
             stop_token - specify token to place at end of strings
+            unk_token - if not None, prunes all vocab that appears only once, replaces with unk_token
             regenerate - if True, regenerate vocabulary and numpy arrays even if they exist in the save path
         """
         self.stop_token = stop_token
+        self.unknown_token = unk_token
         self.max_message_length = max_length
         self.strings = strings
         self.nlp = spacy.load('en_core_web_sm')
@@ -51,10 +54,21 @@ class StringDataset(arcadian.dataset.Dataset):
         else:
             if token_to_id is None:
                 # Generate vocabulary ourselves.
-                self.token_to_id, self.id_to_token = create_vocabulary(self.strings)
+                if self.unknown_token is not None:
+                    self.token_to_id, self.id_to_token = create_vocabulary(self.strings)
+                else:
+                    self.token_to_id, self.id_to_token = create_vocabulary(self.strings, no_below=0)
+
+                # Add stop token to vocabulary
                 vocab_size = len(self.token_to_id)
                 self.token_to_id[self.stop_token] = vocab_size
                 self.id_to_token[vocab_size] = self.stop_token
+
+                # Add unknown token to vocabulary
+                if self.unknown_token is not None:
+                    vocab_size = len(self.token_to_id)
+                    self.token_to_id[self.unknown_token] = vocab_size
+                    self.id_to_token[vocab_size] = self.unknown_token
             else:
                 # Use user-defined vocabulary.
                 self.token_to_id = token_to_id
@@ -121,7 +135,8 @@ class StringDataset(arcadian.dataset.Dataset):
             if len(tk_tokens) <= self.max_message_length:
                 tk_token_strings.append(tk_tokens)
 
-        np_messages = construct_numpy_from_messages(tk_token_strings, self.token_to_id, self.max_message_length)
+        np_messages = construct_numpy_from_messages(tk_token_strings, self.token_to_id, self.max_message_length,
+                                                    unk_token=self.unknown_token)
         formatted_and_filtered_strings = [' '.join(tk_token_string[:-1]) for tk_token_string in tk_token_strings]
         return np_messages, formatted_and_filtered_strings
 
@@ -141,16 +156,21 @@ class StringDataset(arcadian.dataset.Dataset):
         return len(self.np_messages)
 
 
-def create_vocabulary(messages):
+def create_vocabulary(messages, no_below=2):
     """Splits messages into tokens. When a new token is discovered,
     adds that token to a growing vocabulary. Each token is associated with
     an index.
+
+    Arguments:
+        - no_below: prunes vocab terms which appear in less than no_below messages
 
     Returns: A dictionary mapping each token to its corresponding index, and a
     dictionary mapping each index to its corresponding token."""
 
     message_tokens = [message.split() for message in messages]
-    token_to_id = gensim.corpora.Dictionary(documents=message_tokens).token2id
+    dictionary = gensim.corpora.Dictionary(documents=message_tokens)
+    dictionary.filter_extremes(no_below=no_below)
+    token_to_id = dictionary.token2id
     id_to_token = {v: k for k, v in token_to_id.items()}
     # Add '' as index 0
     num_non_empty_words = len(token_to_id)
@@ -162,7 +182,7 @@ def create_vocabulary(messages):
     return token_to_id, id_to_token
 
 
-def construct_numpy_from_messages(messages, vocab_dict, max_length):
+def construct_numpy_from_messages(messages, vocab_dict, max_length, unk_token=None):
     """Construct a numpy array from messages using vocab_dict as a mapping
     from each word to an integer index."""
     m = len(messages)
@@ -171,7 +191,12 @@ def construct_numpy_from_messages(messages, vocab_dict, max_length):
         message = messages[i]
         for j, each_token in enumerate(message):
             if j < max_length:
-                np_messages[i, j] = vocab_dict[each_token]
+                if each_token in vocab_dict:
+                    np_messages[i, j] = vocab_dict[each_token]
+                elif unk_token is not None:
+                    np_messages[i, j] = vocab_dict[unk_token]
+                else:
+                    raise ValueError('Out-of-vocabulary token %s found in string: %s' % (each_token, message))
     return np_messages
 
 
