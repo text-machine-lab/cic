@@ -12,29 +12,34 @@ ex = Experiment('ukwac')
 @ex.config
 def config():
     max_sentence_length = 10
-    save_dir = os.path.join(cic.config.DATA_DIR, 'ukwac_autoencoder2')
+    save_dir = cic.config.GM_AE_SAVE_DIR
     print('Save directory: %s' % save_dir)
     restore_from_save = True
-    num_epochs = 0
+    num_epochs = 1000
     regenerate_dataset = False  # If problem with dataset, try this first
     rnn_size = 600
     learning_rate = 0.0005
+    max_number_of_sentences = None
+    train_test_split=0.9
+    split_seed = 'seed'
 
 
 @ex.automain
 def main(max_sentence_length, save_dir,
          restore_from_save, num_epochs,
-         regenerate_dataset, rnn_size, learning_rate):
+         regenerate_dataset, rnn_size, learning_rate,
+         max_number_of_sentences, train_test_split,
+         split_seed):
     # Load UKWac dataset
     print('Loading dataset...')
     ukwac_path = '/data2/arogers/Corpora/En/UkWac/Plain-txt/ukwac_subset_100M.txt'
     result_path = os.path.join(cic.config.DATA_DIR, 'ukwac')
     ukwac = UKWacDataset(ukwac_path, result_save_path=result_path, max_length=max_sentence_length,
-                         regenerate=regenerate_dataset)
+                         regenerate=regenerate_dataset, max_number_of_sentences=max_number_of_sentences)
     print('Len UKWac dataset: %s' % len(ukwac))
 
     print('Dividing dataset into train/validation split...')
-    train_ukwac, val_ukwac = ukwac.split(.9, seed='seed')
+    train_ukwac, val_ukwac = ukwac.split(train_test_split, seed=0.9)
     print('Len training set: %s' % len(train_ukwac))
     print('Len validation set: %s' % len(val_ukwac))
 

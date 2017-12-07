@@ -4,6 +4,11 @@ import os
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 CORNELL_MOVIE_DIR = os.path.join(DATA_DIR, 'cornell movie-dialogs corpus/')
 
+UKWAC_PATH = '/data2/arogers/Corpora/En/UkWac/Plain-txt/ukwac_subset_100M.txt'
+UKWAC_RESULT_PATH = os.path.join(DATA_DIR, 'ukwac')
+
+GM_AE_SAVE_DIR = os.path.join(DATA_DIR, 'ukwac_autoencoder2')
+
 CORNELL_MOVIE_LINES_FILE = os.path.join(CORNELL_MOVIE_DIR, 'movie_lines.txt')
 CORNELL_MOVIE_CONVERSATIONS_FILE = os.path.join(CORNELL_MOVIE_DIR, 'movie_conversations.txt')
 MS_MARCO_TRAIN_SET = os.path.join(DATA_DIR, 'ms_marco/train_v1.1.json')

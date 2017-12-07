@@ -5,7 +5,7 @@ from cic.gemtk_datasets import string_dataset
 class UKWacDataset(string_dataset.StringDataset):
 
     def __init__(self, ukwac_path, result_save_path=None, token_to_id=None,
-                 max_length=30, regenerate=False):
+                 max_length=30, regenerate=False, max_number_of_sentences=None):
         """Instantiate UK Wac dataset from raw ukwac_path file (slow). Store and load
         resulting training examples to and from result_path (fast). Separates dataset
         into training and testing sets and builds vocabulary. Must specify whether to
@@ -25,7 +25,8 @@ class UKWacDataset(string_dataset.StringDataset):
 
         # Read all sentences from file, and keep them if they follow the correct formatting.
         results_exist = self._numpy_string_formatting_results_exist(result_save_path)
-        #
+
+        # Extract sentences that meet hard-coded criteria
         filtered_sentences = []
         if not results_exist or regenerate or token_to_id is not None:
             for index, line in enumerate(open(self.ukwac_path, 'r', encoding='utf-8', errors='ignore')):
@@ -50,4 +51,5 @@ class UKWacDataset(string_dataset.StringDataset):
                          max_length,
                          result_save_path=result_save_path,
                          token_to_id=token_to_id,
-                         regenerate=regenerate)
+                         regenerate=regenerate,
+                         max_number_of_sentences=max_number_of_sentences)

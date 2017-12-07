@@ -10,7 +10,7 @@ import arcadian.dataset
 
 class StringDataset(arcadian.dataset.Dataset):
     def __init__(self, strings, max_length, result_save_path=None, token_to_id=None,
-                 stop_token='<STOP>', unk_token=None, regenerate=False):
+                 stop_token='<STOP>', unk_token=None, regenerate=False, max_number_of_sentences=None):
         """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
         converts all strings into a large numpy array of indices.
 
@@ -82,6 +82,11 @@ class StringDataset(arcadian.dataset.Dataset):
                 pickle.dump(self.token_to_id, open(self.vocab_save_path, 'wb'))
                 pickle.dump(self.messages, open(self.sentences_save_path, 'wb'))
                 np.save(self.numpy_save_path, self.np_messages)
+
+        # Trim results to max_number_of_sentences
+        if max_number_of_sentences is not None:
+            self.np_messages = self.np_messages[:max_number_of_sentences, :]
+            self.messages = self.messages[:max_number_of_sentences]
 
     def _numpy_string_formatting_results_exist(self, result_save_path):
         """Check that all save files exist, return true in this case.
