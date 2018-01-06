@@ -18,18 +18,6 @@ class LatentUKWacDataset(arcadian.dataset.Dataset):
 
         ukwac and autencodor must be specified if codes are to be regenerated.
         """
-        # if save_dir is not None:
-        #     self.saved_codes_filename = os.path.join(save_dir, 'np_ukwac_codes.npy')
-        #
-        # if save_dir is not None and not regenerate and os.path.isfile(self.saved_codes_filename):
-        #     # If we have already saved the codes, load them from save (unless we wish to regenerate them)
-        #     self.np_latent_codes = np.load(open(self.saved_codes_filename, 'rb'))
-        # else:
-        #     assert autoencoder is not None and ukwac is not None
-        #     # If codes don't exist, we must generate them.
-        #     self.np_latent_codes = autoencoder.predict(ukwac, output_tensors=['code'])
-        #     if save_dir is not None:
-        #         np.save(self.np_latent_codes, open(self.saved_codes_filename, 'wb'))
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 

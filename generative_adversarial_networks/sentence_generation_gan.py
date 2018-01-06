@@ -2,10 +2,16 @@
 
 import tensorflow as tf
 import arcadian.gm
+import arcadian.dataset
+import numpy as np
 
 class SentenceGenerationGAN(arcadian.gm.GenericModel):
-    def __init__(self, code_size, **kwargs):
+    def __init__(self, code_size, num_gen_layers, num_dsc_layers, **kwargs):
         self.code_size = code_size
+        self.num_gen_layers = num_gen_layers
+        self.num_dsc_layers = num_dsc_layers
+
+        self.dsc_scope = None
 
         # Run setup of model
         super().__init__(**kwargs)
@@ -17,57 +23,248 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         by assigning loss tensor to self.loss variable. Read initialize_loss() documentation for adaptive
         learning rates and evaluating loss tensor at runtime."""
 
+        # Notice: self.inputs['code'] is label sample, while self.outputs['code'] is generated sample
+
         # Define inputs to model
+        self._define_inputs()
 
         # Build generator
+        with tf.variable_scope('GENERATOR'):
+            self.outputs['code'] = self._build_generator(self.inputs['z'])
+
+            assert self.outputs['code'].get_shape()[1] == self.code_size
 
         # Build descriminator
+        with tf.variable_scope('DISCRIMINATOR') as scope:
+
+            self.dsc_scope = scope
+            # Build two discriminators, one takes in generator output as input, the other
+            # takes in true data samples.
+            self.outputs['fake_logits'] = self._build_discriminator(self.outputs['code'])
+
+            assert len(self.outputs['fake_logits'].get_shape()) == 1
+
+            scope.reuse_variables()
+
+            self.outputs['real_logits'] = self._build_discriminator(self.inputs['code'])
+
+            assert len(self.outputs['real_logits'].get_shape()) == 1
 
         # Define loss
+        with tf.variable_scope('TRAINER'):
+            self._build_loss()
+
+        self.load_scopes = ['GENERATOR', 'DISCRIMINATOR']
 
     def _define_inputs(self):
-        """Create """
+        """Create latent space input"""
+
+        # True label input to discriminator.
+        self.inputs['code'] = tf.placeholder(tf.float32, shape=(None, self.code_size), name='code')
+
+        # Random vector z input to generator.
+        self.inputs['z'] = tf.placeholder(tf.float32, shape=(None, self.code_size), name='z')
+
+        self.inputs['gen_learning_rate'] = tf.placeholder_with_default(.001, ())
+        self.inputs['dsc_learning_rate'] = tf.placeholder_with_default(.001, ())
+        # Used in dropout
+        self.inputs['keep_prob'] = tf.placeholder_with_default(1.0, (), name='keep_prob')
+        # c value used for gradient clipping in Wasserstein GAN
+        self.inputs['c'] = tf.placeholder(dtype=tf.float32, shape=(), name='c')
+
+    def _build_generator(self, z):
+        """Build ResNet generator mapping from input vector z to
+        a generated data example."""
+        return build_resnet('generator', z, self.num_gen_layers, 1.0)
+
+    def _build_discriminator(self, code):
+        """Build Discriminator using ResNet, with a linear layer and sigmoid
+        to produce a binary classification of whether the input is a real
+        or fake example.
+
+        Arguments:
+            - input: Tensor input representing real or generated data example
+        """
+
+        resnet_layer = build_resnet('input_stage', code, self.num_dsc_layers, self.inputs['keep_prob'])
+        decision_layer = build_linear_layer('decision_layer', resnet_layer, 1)
+        logits = tf.reshape(decision_layer, [-1])
+
+        assert len(logits.get_shape()) == 1
+
+        return logits
+
+    def _build_loss(self):
+        """Add optimizers to optimizer list for training both generator and
+        discriminator."""
+        generator_variables = get_variables_of_scope('GENERATOR')
+        discriminator_variables = get_variables_of_scope('DISCRIMINATOR')
+
+        assert len(generator_variables) > 0
+        assert len(discriminator_variables) > 0
+
+        # Norm clipping as suggested in 'Improved Training of Wasserstein GANs'
+        batch_size = tf.shape(self.inputs['code'])[0]
+        real_data = self.inputs['code']
+        fake_data = self.outputs['code']
+        LAMBDA = 10
+
+        alpha = tf.random_uniform(
+            shape=[batch_size, 1],
+            minval=0.,
+            maxval=1.
+        )
+        differences = fake_data - real_data
+        interpolates = real_data + (alpha * differences)
+
+        with tf.variable_scope(self.dsc_scope) as scope:
+            scope.reuse_variables()
+            intpol_logits = self._build_discriminator(interpolates)
+
+        gradients = tf.gradients(intpol_logits, [interpolates])[0]
+        slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
+        gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
+        norm_loss = LAMBDA * gradient_penalty
+
+        # Wasserstein losses
+        self.outputs['dsc_real_loss'] = -tf.reduce_mean(self.outputs['real_logits'])
+        self.outputs['dsc_fake_loss'] = tf.reduce_mean(self.outputs['fake_logits'])
+
+        self.outputs['dsc_loss'] = self.outputs['dsc_fake_loss'] + self.outputs['dsc_real_loss'] + norm_loss
+        self.outputs['gen_loss'] = -self.outputs['dsc_fake_loss']
+
+        gen_lr = self.inputs['gen_learning_rate']
+        dsc_lr = self.inputs['dsc_learning_rate']
+
+        # Create optimizers for generator and discriminator.
+        gen_op = tf.train.AdamOptimizer(gen_lr).minimize(self.outputs['gen_loss'], var_list=generator_variables)
+        dsc_op = tf.train.AdamOptimizer(dsc_lr).minimize(self.outputs['dsc_loss'], var_list=discriminator_variables)
+
+        # Clip discriminator weights to be small
+        #d_clip_op = tf.group(*[d.assign(tf.clip_by_value(d, -self.inputs['c'], self.inputs['c'])) for d in discriminator_variables])
+        #g_clip_op = tf.group(*[g.assign(tf.clip_by_value(g, -0.01, 0.01)) for g in generator_variables])
+
+        #gen_op = tf.group(gen_op, g_clip_op)
+        #dsc_op = tf.group(dsc_op, d_clip_op)
+
+        self.train_ops = [gen_op] + [dsc_op] * 6
+
+    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, parameter_dict, **kwargs):
+        """Optional: Define action to take place at the end of every epoch. Can use this
+        for printing accuracy, saving statistics, etc. Remember, if is_training=False, we are using the model for
+        prediction. Check for this. Returns true to continue training. Only return false if you wish to
+        implement early-stopping."""
+        print()
+        return True
+
+    def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training,
+                         parameter_dict, **kwargs):
+        """Optional: Define action to take place at the end of every batch. Can use this
+        for printing accuracy, saving statistics, etc. Remember, if is_training=False, we are using the model for
+        prediction. Check for this."""
+        if batch_index % 1000 == 0 and is_training:
+            print()
+            print('Generator Loss: %s' % output_batch_dict['dsc_loss'])
+            print('Discriminator Loss: %s' % output_batch_dict['gen_loss'])
+
+            def step(x):
+                return 1 * (x > 0)
+
+            generator_accuracy = np.mean(step(output_batch_dict['fake_logits']))
+            discriminator_fake_accuracy = 1 - generator_accuracy
+            discriminator_real_accuracy = np.mean(step(output_batch_dict['real_logits']))
+            discriminator_accuracy = (discriminator_fake_accuracy + discriminator_real_accuracy) / 2
+
+            print('Generator Accuracy: %s' % generator_accuracy)
+            print('Discriminator Accuracy: %s' % discriminator_accuracy)
+            print('Real Output: %s' % output_batch_dict['real_logits'][:10])
+            print('Fake Output: %s' % output_batch_dict['fake_logits'][:10])
+            print('Generator code: %s' % output_batch_dict['code'][:2, :10])
+
+            #if discriminator_accuracy > 0.8:
 
 
-def build_resnet(name, tf_input, num_layers):
+
+    def action_before_training(self, placeholder_dict, num_epochs, is_training, output_tensor_names,
+                               parameter_dict, batch_size=32, train_op_names=None, **kwargs):
+        """Optional: Define action to take place at the beginning of training/prediction, once. This could be
+        used to set output_tensor_names so that certain ops always execute, as needed for other action functions."""
+        if is_training:
+            output_tensor_names.extend(['dsc_loss', 'gen_loss', 'real_logits', 'fake_logits', 'code'])
+
+
+def build_linear_layer(name, input_tensor, output_size):
+    """Build linear layer by creating random weight matrix and bias vector,
+    and applying them to input. Weights initialized with random normal
+    initializer.
+
+    Arguments:
+        - name: Required for unique Variable names
+        - input: (num_examples x layer_size) matrix input
+        - output_size: size of output Tensor
+
+    Returns: Output Tensor of linear layer with size (num_examples, out_size).
+        """
+    input_size = input_tensor.get_shape()[1]  #tf.shape(input_tensor)[1]
+    with tf.variable_scope(name):
+        scale_w = tf.get_variable('w', shape=(input_size, output_size),
+                                  initializer=tf.contrib.layers.xavier_initializer(uniform=False))
+
+        scale_b = tf.get_variable('b', shape=(output_size,), initializer=tf.zeros_initializer())
+
+    return tf.matmul(input_tensor, scale_w) + scale_b
+
+
+def build_resnet(name, input_tensor, num_layers, keep_prob):
     """Transform input tensor by running it through ResNet layers.
     All layers are the same size as the input. All layers are initialized
-    with a normal gaussian with mean=0 stdev=0.1.
+    with xavier initialization, batch norm is applied.
 
     Arguments:
         - name: internal name used to create weights and biases (required)
-        - tf_input: input tensor to enter ResNet
+        - input: input tensor to enter ResNet
         - num_layers: number of ResNet layers
 
     Returns: Output result of ResNet layers.
     """
 
     # The size of resnet layers are the same (without rescaling layers).
-    input_size = tf.shape(input)[1]
+    input_size = input_tensor.get_shape()[1]
 
     # Each resnet layer consists of an input linear layer, a relu, and an output linear layer.
     # Now we build each layer of the beautiful resnet.
     with tf.variable_scope(name):
         for layer_index in range(num_layers):
             with tf.variable_scope('RESNET_LAYER_' + str(layer_index)):
-                # Initialize input and output weights and biases
-                tf_layer_input_weights = tf.get_variable('resnet_input_weights',
-                                                   shape=(input_size, input_size),
-                                                   initializer=tf.random_normal_initializer(stddev=0.1))
-                tf_layer_input_biases = tf.get_variable('resnet_input_biases',
-                                                  shape=(input_size),
-                                                  initializer=tf.random_normal_initializer(stddev=0.1))
-                tf_layer_output_weights = tf.get_variable('resnet_output_weights',
-                                                   shape=(input_size, input_size),
-                                                   initializer=tf.random_normal_initializer(stddev=0.1))
-                tf_layer_output_biases = tf.get_variable('resnet_output_biases',
-                                                  shape=(input_size),
-                                                  initializer=tf.random_normal_initializer(stddev=0.1))
-                # Perform transformation of input to produce output
-                tf_input_linear_transform = tf.matmul(input, tf_layer_input_weights) + tf_layer_input_biases
-                tf_cutoff = tf.nn.relu(tf_input_linear_transform)
-                tf_output_linear_transform = tf.matmul(tf_cutoff, tf_layer_output_weights) + tf_layer_output_biases
-                # Add output to input
-                tf_input = tf_input + tf_output_linear_transform
+                # Construct layer.
+                #dropout_layer = tf.nn.dropout(input_tensor, keep_prob)
+                input_layer = build_linear_layer('input_layer', input_tensor, input_size)
+                #input_batch_norm = tf.contrib.layers.batch_norm(input_layer)
+                relu_layer = tf.nn.relu(input_layer)
+                output_layer = build_linear_layer('output_layer', relu_layer, input_size)
+                #output_batch_norm = tf.contrib.layers.batch_norm(output_layer)
 
-    return tf_input
+                # Add output to input.
+                input_tensor = input_tensor + output_layer
+
+    return input_tensor
+
+
+def get_variables_of_scope(scope):
+    """Get all trainable variables under scope."""
+    return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
+
+
+class GaussianRandomDataset(arcadian.dataset.Dataset):
+    def __init__(self, length, num_features, feature_name):
+        """Dataset that produces a random gaussian vector for every
+        training example."""
+        self.length = length
+        self.num_features = num_features
+        self.feature_name = feature_name
+
+    def __getitem__(self, index):
+        return {self.feature_name: np.random.randn(self.num_features)}
+
+    def __len__(self):
+        return self.length

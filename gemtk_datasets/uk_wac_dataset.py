@@ -5,7 +5,8 @@ from cic.gemtk_datasets import string_dataset
 class UKWacDataset(string_dataset.StringDataset):
 
     def __init__(self, ukwac_path, result_save_path=None, token_to_id=None,
-                 max_length=30, regenerate=False, max_number_of_sentences=None):
+                 max_length=30, regenerate=False, max_number_of_sentences=None,
+                 min_length=0):
         """Instantiate UK Wac dataset from raw ukwac_path file (slow). Store and load
         resulting training examples to and from result_path (fast). Separates dataset
         into training and testing sets and builds vocabulary. Must specify whether to
@@ -49,6 +50,7 @@ class UKWacDataset(string_dataset.StringDataset):
         # Use StringDataset class to automatically tokenize and convert strings to numpy format.
         super().__init__(filtered_sentences,
                          max_length,
+                         min_length=min_length,
                          result_save_path=result_save_path,
                          token_to_id=token_to_id,
                          regenerate=regenerate,

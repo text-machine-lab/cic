@@ -24,7 +24,7 @@ class LatentUKWacDatasetTest(unittest2.TestCase):
         self.save_dir = cic.config.GM_AE_SAVE_DIR
         print('Autoencoder location: %s' % (self.save_dir))
         self.autoencoder = AutoEncoder(len(self.ukwac.token_to_id), save_dir=self.save_dir,
-                                       restore_from_save=True, max_len=10, rnn_size=RNN_SIZE)
+                                       restore_from_save=True, max_len=10, rnn_size=RNN_SIZE, decoder=False)
 
     def test_construction_with_regeneration(self):
         latent_ukwac = LatentUKWacDataset(os.path.join(cic.config.DATA_DIR, 'test'), RNN_SIZE, ukwac=self.ukwac,
@@ -37,8 +37,6 @@ class LatentUKWacDatasetTest(unittest2.TestCase):
         latent_ukwac = LatentUKWacDataset(os.path.join(cic.config.DATA_DIR, 'test'), RNN_SIZE)
         assert latent_ukwac.dataset is not None
         # assert not np.array_equal(latent_ukwac.dataset, np.zeros(len(latent_ukwac), RNN_SIZE))
-        for index in range(len(latent_ukwac)):
-            print(np.mean(latent_ukwac[index]['code']))
 
     def test_reconstruction(self):
         decoder = AutoEncoder(len(self.ukwac.token_to_id), save_dir=self.save_dir,

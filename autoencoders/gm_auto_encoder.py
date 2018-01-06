@@ -42,7 +42,7 @@ class AutoEncoder(arcadian.gm.GenericModel):
             self.outputs['prediction'], self.tf_message_log_prob, self.outputs['train_probability'] \
                 = self.build_decoder(decoder_input, self.inputs['is training'], use_teacher_forcing=True)
 
-        self.outputs['train_prediction'] = self.outputs['prediction']
+            self.outputs['train_prediction'] = self.outputs['prediction']
 
         if self.decoder and self.encoder:
             self.tf_output_loss, self.tf_kl_loss \
@@ -277,7 +277,7 @@ class AutoEncoder(arcadian.gm.GenericModel):
 
         return results['prediction']
 
-    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, **kwargs):
+    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, parameter_dict, **kwargs):
         """Print the loss for debugging purposes."""
         if is_training:
             epoch_loss = np.mean(output_tensor_dict['loss'])

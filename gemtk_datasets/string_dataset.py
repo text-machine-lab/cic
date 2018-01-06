@@ -9,7 +9,7 @@ import arcadian.dataset
 
 
 class StringDataset(arcadian.dataset.Dataset):
-    def __init__(self, strings, max_length, result_save_path=None, token_to_id=None,
+    def __init__(self, strings, max_length, min_length=None, result_save_path=None, token_to_id=None,
                  stop_token='<STOP>', unk_token=None, regenerate=False, max_number_of_sentences=None):
         """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
         converts all strings into a large numpy array of indices.
@@ -26,6 +26,8 @@ class StringDataset(arcadian.dataset.Dataset):
         self.stop_token = stop_token
         self.unknown_token = unk_token
         self.max_message_length = max_length
+        self.min_message_length = min_length
+        print(self.min_message_length)
         self.strings = strings
         self.nlp = spacy.load('en_core_web_sm')
 
@@ -137,7 +139,10 @@ class StringDataset(arcadian.dataset.Dataset):
             tk_string = self.nlp.tokenizer(each_string.lower())
             tk_tokens = [str(token) for token in tk_string if str(token) != ' ' and str(token) in self.token_to_id]
             tk_tokens += [self.stop_token]
-            if len(tk_tokens) <= self.max_message_length:
+
+            if len(tk_tokens) <= self.max_message_length \
+                    and (self.min_message_length is None or len(tk_tokens) >= self.min_message_length):
+
                 tk_token_strings.append(tk_tokens)
 
         np_messages = construct_numpy_from_messages(tk_token_strings, self.token_to_id, self.max_message_length,
