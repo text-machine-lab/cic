@@ -10,7 +10,8 @@ import arcadian.dataset
 
 class StringDataset(arcadian.dataset.Dataset):
     def __init__(self, strings, max_length, min_length=None, result_save_path=None, token_to_id=None,
-                 stop_token='<STOP>', unk_token=None, regenerate=False, max_number_of_sentences=None):
+                 stop_token='<STOP>', unk_token='<UNK>', regenerate=False, max_number_of_sentences=None,
+                 vocab_min_freq=0, keep_unk_sentences=True, update_vocab=True, nlp=None):
         """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
         converts all strings into a large numpy array of indices.
 
@@ -22,14 +23,18 @@ class StringDataset(arcadian.dataset.Dataset):
             stop_token - specify token to place at end of strings
             unk_token - if not None, prunes all vocab that appears only once, replaces with unk_token
             regenerate - if True, regenerate vocabulary and numpy arrays even if they exist in the save path
+            update_vocab - if using premade token_to_id, update vocab with words from strings
         """
         self.stop_token = stop_token
         self.unknown_token = unk_token
         self.max_message_length = max_length
         self.min_message_length = min_length
-        print(self.min_message_length)
+        self.nlp = nlp
+        if self.nlp is None:
+            self.nlp = spacy.load('en_core_web_sm')
         self.strings = strings
-        self.nlp = spacy.load('en_core_web_sm')
+        self.vocab_min_freq = vocab_min_freq
+        self.keep_unk_sentences = keep_unk_sentences
 
         if result_save_path is not None:
             # Make sure result_save_path exists.
@@ -54,27 +59,30 @@ class StringDataset(arcadian.dataset.Dataset):
             self.messages = pickle.load(open(self.sentences_save_path, 'rb'))
             self.np_messages = np.load(self.numpy_save_path)
         else:
-            if token_to_id is None:
+            self.token_to_id = {}
+
+            if update_vocab:
                 # Generate vocabulary ourselves.
-                if self.unknown_token is not None:
-                    self.token_to_id, self.id_to_token = create_vocabulary(self.strings)
-                else:
-                    self.token_to_id, self.id_to_token = create_vocabulary(self.strings, no_below=0)
+                new_token_to_id, _ = create_vocabulary(self.strings, no_below=vocab_min_freq)
 
                 # Add stop token to vocabulary
                 vocab_size = len(self.token_to_id)
                 self.token_to_id[self.stop_token] = vocab_size
-                self.id_to_token[vocab_size] = self.stop_token
 
                 # Add unknown token to vocabulary
                 if self.unknown_token is not None:
                     vocab_size = len(self.token_to_id)
                     self.token_to_id[self.unknown_token] = vocab_size
-                    self.id_to_token[vocab_size] = self.unknown_token
-            else:
-                # Use user-defined vocabulary.
-                self.token_to_id = token_to_id
-                self.id_to_token = {v: k for k, v in token_to_id.items()}
+
+                # Add new vocab to final vocabulary
+                self.token_to_id.update(new_token_to_id)
+
+            if token_to_id is not None:
+                # Use user-defined token_to_id as base vocabulary,
+                # Add newly found words onto it
+                self.token_to_id = add_new_vocabulary(token_to_id, self.token_to_id)
+
+            self.id_to_token = {v: k for k, v in self.token_to_id.items()}
 
             self.np_messages, self.messages = self.convert_strings_to_numpy(self.strings)
 
@@ -137,11 +145,22 @@ class StringDataset(arcadian.dataset.Dataset):
         tk_token_strings = []
         for each_string in strings:
             tk_string = self.nlp.tokenizer(each_string.lower())
-            tk_tokens = [str(token) for token in tk_string if str(token) != ' ' and str(token) in self.token_to_id]
-            tk_tokens += [self.stop_token]
+
+            tk_tokens = []
+            no_unk = True
+            for token in tk_string:
+                if str(token) != ' ':
+                    if str(token) in self.token_to_id:
+                        tk_tokens.append(str(token))
+                    else:
+                        tk_tokens.append(self.unknown_token)
+                        no_unk = False
+
+            tk_tokens.append(self.stop_token)
 
             if len(tk_tokens) <= self.max_message_length \
-                    and (self.min_message_length is None or len(tk_tokens) >= self.min_message_length):
+                    and (self.min_message_length is None or len(tk_tokens) >= self.min_message_length)\
+                    and (self.keep_unk_sentences is True or no_unk is True):
 
                 tk_token_strings.append(tk_tokens)
 
@@ -173,13 +192,17 @@ def create_vocabulary(messages, no_below=2):
 
     Arguments:
         - no_below: prunes vocab terms which appear in less than no_below messages
+        - token_to_id: previous vocabulary to build off of
 
     Returns: A dictionary mapping each token to its corresponding index, and a
     dictionary mapping each index to its corresponding token."""
 
     message_tokens = [message.split() for message in messages]
+
+    # Build a vocabulary
     dictionary = gensim.corpora.Dictionary(documents=message_tokens)
-    dictionary.filter_extremes(no_below=no_below)
+    dictionary.filter_extremes(no_below=no_below, no_above=1.0)
+
     token_to_id = dictionary.token2id
     id_to_token = {v: k for k, v in token_to_id.items()}
     # Add '' as index 0
@@ -190,6 +213,16 @@ def create_vocabulary(messages, no_below=2):
     id_to_token[0] = ''
 
     return token_to_id, id_to_token
+
+def add_new_vocabulary(old, new):
+    """Updates the old vocabulary to have new words
+    from the new vocabulary."""
+    old = old.copy()
+    for word in new:
+        if word not in old:
+            old[word] = len(old)
+
+    return old
 
 
 def construct_numpy_from_messages(messages, vocab_dict, max_length, unk_token=None):

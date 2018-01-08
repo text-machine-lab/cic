@@ -5,6 +5,8 @@ import os
 from cic.generative_adversarial_networks.sentence_generation_gan import SentenceGenerationGAN, GaussianRandomDataset
 from cic.gemtk_datasets.latent_uk_wac_dataset import LatentUKWacDataset
 from cic.gemtk_datasets.uk_wac_dataset import UKWacDataset
+from cic.gemtk_datasets.book_corpus_dataset import TorontoBookCorpus
+from cic.gemtk_datasets.string_dataset import convert_numpy_array_to_strings
 from cic.autoencoders.gm_auto_encoder import AutoEncoder
 from arcadian.dataset import MergeDataset, DatasetPtr
 import cic.config
@@ -16,10 +18,10 @@ ex = Experiment('sentence_gan')
 def config():
     print('Running config')
     code_size = 600
-    regenerate_latent_ukwac = True
-    max_number_of_sentences = None
-    num_generator_layers = 30
-    num_discriminator_layers = 30
+    regenerate_latent_ukwac = False
+    max_number_of_sentences = 2000000
+    num_generator_layers = 40
+    num_discriminator_layers = 40
     sentence_gan_save_dir = os.path.join(cic.config.DATA_DIR, 'sentence_gan')
     num_epochs = 100
     restore_sentence_gan_from_save = False
@@ -37,25 +39,31 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
     print('Running program')
 
     # If we will reconstruct latent dataset, construct ukwac dataset and encoder portion of pretrained autoencoder.
-    ukwac = None
+    ds = None
     encoder = None
 
     print('Constructing UK Wac dataset')
-    ukwac = UKWacDataset(cic.config.UKWAC_PATH, result_save_path=cic.config.UKWAC_RESULT_PATH,
-                         max_length=10, regenerate=False, max_number_of_sentences=max_number_of_sentences)
-    print('Length of UK Wac dataset: %s' % len(ukwac))
+    # ds = UKWacDataset(cic.config.UKWAC_PATH, result_save_path=cic.config.UKWAC_RESULT_PATH,
+    #                      max_length=10, regenerate=False, max_number_of_sentences=max_number_of_sentences)
+
+    ds = TorontoBookCorpus(20, result_path=cic.config.BOOK_CORPUS_RESULT,
+                            min_length=5, max_num_s=max_number_of_sentences, keep_unk_sentences=False,
+                            vocab_min_freq=5, vocab=None, regenerate=False)
+
+
+    print('Length of UK Wac dataset: %s' % len(ds))
 
     if regenerate_latent_ukwac:
         print('Regenerating latent UK Wac')
         print('Constructing pre-trained autoencoder')
-        encoder = AutoEncoder(len(ukwac.token_to_id), save_dir=cic.config.GM_AE_SAVE_DIR,
+        encoder = AutoEncoder(len(ds.vocab), save_dir=cic.config.GM_AE_SAVE_DIR,
                               restore_from_save=True, max_len=max_len, rnn_size=code_size,
                               encoder=True, decoder=False)
 
     # Build latent ukwac dataset, either by regenerating it or loading from saved results.
     print('Constructing latent UK Wac dataset')
     latent_ukwac = LatentUKWacDataset(os.path.join(cic.config.DATA_DIR, 'latent_ukwac'), code_size,
-                                      ukwac=ukwac, autoencoder=encoder, regenerate=regenerate_latent_ukwac)
+                                      ukwac=ds, autoencoder=encoder, regenerate=regenerate_latent_ukwac)
 
     z_dataset = GaussianRandomDataset(len(latent_ukwac), code_size, 'z')
 
@@ -85,7 +93,7 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
     assert len(generated_codes['code']) == 100
 
     # Create decoder to convert latent sentences back to English
-    decoder = AutoEncoder(len(ukwac.token_to_id), save_dir=cic.config.GM_AE_SAVE_DIR,
+    decoder = AutoEncoder(len(ds.vocab), save_dir=cic.config.GM_AE_SAVE_DIR,
                           restore_from_save=True, max_len=10, rnn_size=code_size,
                           encoder=False, decoder=True)
 
@@ -93,7 +101,14 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
 
     assert generated_np_sentences.shape == (len(generated_codes['code']), decoder.max_len)
 
-    generated_sentences = ukwac.convert_numpy_to_strings(generated_np_sentences)
+    reversed_vocab = {ds.vocab[k]:k for k in ds.vocab}
+
+    generated_sentences = convert_numpy_array_to_strings(generated_np_sentences, reversed_vocab,
+                                            ds.stop_token,
+                                            keep_stop_token=False)
+
+
+    #generated_sentences = ds.convert_numpy_to_strings(generated_np_sentences)
 
     for each_sentence in generated_sentences:
         print(each_sentence)

@@ -285,6 +285,18 @@ class AutoEncoder(arcadian.gm.GenericModel):
 
         return True
 
+    def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training,
+                         parameter_dict, **kwargs):
+        """Optional: Define action to take place at the end of every batch. Can use this
+        for printing accuracy, saving statistics, etc. Remember, if is_training=False, we are using the model for
+        prediction. Check for this."""
+
+        # Save every 1000 batches!
+        if batch_index != 0 and batch_index % 1000 == 0 and is_training:
+            print('Saving...')
+            if self.save_per_epoch and self.trainable and is_training:
+                self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
+
 
 
 

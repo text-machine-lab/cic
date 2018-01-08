@@ -1,0 +1,58 @@
+"""In this script, we plot sentences from the Toronto Book Corpus dataset, and sentences generated
+from our fully-trained sentence GAN. We use TSNE for dimensionality reduction."""
+import cic.config
+from cic.gemtk_datasets.latent_uk_wac_dataset import LatentUKWacDataset
+from cic.generative_adversarial_networks.sentence_generation_gan import SentenceGenerationGAN, GaussianRandomDataset
+import os
+from sklearn.manifold import TSNE
+import matplotlib.pyplot
+import random
+import numpy as np
+
+num_plot = 1000
+
+code_size = 600
+num_generator_layers = 30
+num_discriminator_layers = 30
+sentence_gan_save_dir = os.path.join(cic.config.DATA_DIR, 'sentence_gan')
+restore_sentence_gan_from_save = False
+max_len = 20
+
+ds = LatentUKWacDataset(os.path.join(cic.config.DATA_DIR, 'latent_ukwac'), code_size,
+                                  ukwac=None, autoencoder=None, regenerate=False)
+
+gan = SentenceGenerationGAN(code_size=code_size, num_gen_layers=num_generator_layers,
+                            num_dsc_layers=num_discriminator_layers,
+                            save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
+                            restore_from_save=True)
+
+# Gather real examples
+random_indices = [int(random.random() * len(ds)) for i in range(num_plot)]
+
+real_s = []
+for index in random_indices:
+    real_s.append(ds[index]['code'])
+real_data = np.stack(real_s, axis=0)
+
+print('Real data shape: %s' % str(real_data.shape))
+
+# Gather fake examples
+z = GaussianRandomDataset(num_plot, code_size, 'z')
+fake_data = gan.predict(z, output_tensor_names=['code'])['code']
+
+print('Fake data shape: %s' % str(fake_data.shape))
+
+all_data = np.concatenate([real_data, fake_data], axis=0)
+
+# Run TSNE
+tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
+tsne_results = tsne.fit_transform(all_data)
+
+colors = ['b'] * num_plot + ['r'] * num_plot
+
+# Plot
+print('Plotting...')
+
+matplotlib.pyplot.title('Real v.s. Fake Latent Space Embeddings')
+matplotlib.pyplot.scatter(tsne_results[:, 0], tsne_results[:, 1], c=colors)
+matplotlib.pyplot.show()
