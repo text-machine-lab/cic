@@ -9,7 +9,9 @@ from arcadian.dataset import Dataset
 class TorontoBookCorpus(Dataset):
     def __init__(self, max_s_len, result_path, max_num_s=None, max_part_len=100000,
                  stop_token='<STOP>', regenerate=False, vocab=None, **kwargs):
-        """Book Corpus provided by Toronto University, with approx. 70 million sentences. Yay!"""
+        """Book Corpus provided by Toronto University, with approx. 70 million sentences. Contains
+        a single feature 'message' of numpy encoded sentences. Sentences are filtered for min and
+        max lengths, and sentences containing non-alphabetical non-period characters are removed."""
 
         self.stop_token = stop_token
 
@@ -17,7 +19,8 @@ class TorontoBookCorpus(Dataset):
             os.makedirs(result_path)
 
         # Dataset is contained in two .txt files, and is way too big to store on disk
-        # We partition dataset into a series of StringDatasets and save them all to disk separately
+        # We partition dataset into subsets, process each one using a string dataset,
+        # and save all to an h5py file.
         strings = []
 
         data_path = os.path.join(result_path, 'data.hdf5')

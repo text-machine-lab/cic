@@ -1,8 +1,8 @@
-"""Train and evaluate neural language model on UK Wac."""
+"""Train and evaluate neural language model on Toronto Book Corpus."""
 
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
-from cic.nlm.nlm import NeuralLanguageModelTraining, NeuralLanguageModelPrediction
+from cic.models.nlm import NeuralLanguageModelTraining, NeuralLanguageModelPrediction
 import cic.config
 from sacred import Experiment
 import numpy as np

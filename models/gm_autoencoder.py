@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 
 import arcadian.gm
-from cic.qa import match_lstm
+from cic.models import match_lstm
 
 
 class AutoEncoder(arcadian.gm.GenericModel):
@@ -18,35 +18,35 @@ class AutoEncoder(arcadian.gm.GenericModel):
         super().__init__(**kwargs)
 
     def build(self):
-        self.inputs['message'] = tf.placeholder_with_default(tf.zeros([1, self.max_len], dtype=tf.int32),
-                                                      [None, self.max_len], name='input_message')
-        self.inputs['code'] = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
-        self.inputs['keep prob'] = tf.placeholder_with_default(1.0, (), name='keep_prob')
+        self.i['message'] = tf.placeholder_with_default(tf.zeros([1, self.max_len], dtype=tf.int32),
+                                                        [None, self.max_len], name='input_message')
+        self.i['code'] = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
+        self.i['keep prob'] = tf.placeholder_with_default(1.0, (), name='keep_prob')
         self.tf_kl_const = tf.placeholder_with_default(1.0, (), name='kl_const')
 
         with tf.variable_scope('LEARNED_EMBEDDINGS'):
             self.tf_learned_embeddings = tf.get_variable('learned_embeddings',
                                                          shape=[self.vocab_size, self.emb_size],
                                                          initializer=tf.contrib.layers.xavier_initializer())
-            self.tf_message_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, self.inputs['message'],
+            self.tf_message_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, self.i['message'],
                                                           name='message_embeddings')
         if self.encoder:
-            self.outputs['code'], self.tf_latent_mean, self.tf_latent_log_std \
-                = self.build_encoder(self.tf_message_embs, self.inputs['keep prob'],
+            self.o['code'], self.tf_latent_mean, self.tf_latent_log_std \
+                = self.build_encoder(self.tf_message_embs, self.i['keep prob'],
                                      include_epsilon=False)
         if self.decoder:
             if self.encoder:
-                decoder_input = self.outputs['code']
+                decoder_input = self.o['code']
             else:
-                decoder_input = self.inputs['code']
-            self.outputs['prediction'], self.tf_message_log_prob, self.outputs['train_probability'] \
-                = self.build_decoder(decoder_input, self.inputs['is_training'], use_teacher_forcing=True)
+                decoder_input = self.i['code']
+            self.o['prediction'], self.tf_message_log_prob, self.o['train_probability'] \
+                = self.build_decoder(decoder_input, self.i['is_training'], use_teacher_forcing=True)
 
-            self.outputs['train_prediction'] = self.outputs['prediction']
+            self.o['train_prediction'] = self.o['prediction']
 
         if self.decoder and self.encoder:
             self.tf_output_loss, self.tf_kl_loss \
-                = self.build_trainer(self.tf_message_log_prob, self.inputs['message'],
+                = self.build_trainer(self.tf_message_log_prob, self.i['message'],
                                      self.tf_latent_mean, self.tf_latent_log_std)
 
     def build_encoder(self, tf_message_embs, tf_keep_prob, include_epsilon=True):

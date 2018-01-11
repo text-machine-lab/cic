@@ -1,8 +1,6 @@
-"""Create a script to create CSV file for the NLM, VAE, and GAN models."""
+"""Create a script to create an evaluation file for the NLM, VAE, and GAN models.
+Volunteers edit this file to perform evaluation."""
 import cic.config
-from cic.datasets.book_corpus import TorontoBookCorpus
-from cic.nlm.nlm import NeuralLanguageModelPrediction
-from cic.gan.sgan import SentenceGenerationGAN
 import os
 import pickle
 import random

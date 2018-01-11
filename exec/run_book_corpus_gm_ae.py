@@ -1,10 +1,9 @@
-"""Train the Generic Model autoencoder on the UKWac dataset. Evaluate its
+"""Train the Generic Model autoencoder on the Toronto Book Corpus. Evaluate its
 accuracy."""
 import os
 
 import cic.config
-from cic.ae.gm_autoencoder import AutoEncoder
-from cic.datasets.uk_wac import UKWacDataset
+from cic.models.gm_autoencoder import AutoEncoder
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
 from sacred import Experiment

@@ -10,7 +10,7 @@ import arcadian.dataset
 
 class StringDataset(arcadian.dataset.Dataset):
     def __init__(self, strings, max_length, min_length=None, result_save_path=None, token_to_id=None,
-                 stop_token='<STOP>', unk_token='<UNK>', regenerate=False, max_number_of_sentences=None,
+                 stop_token='<STOP>', unk_token='<UNK>', regenerate=False, max_num_s=None,
                  vocab_min_freq=0, keep_unk_sentences=True, update_vocab=True, nlp=None):
         """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
         converts all strings into a large numpy array of indices.
@@ -18,12 +18,18 @@ class StringDataset(arcadian.dataset.Dataset):
         Arguments:
             strings - list of Python strings, interpretted as sentences
             max_length - only strings containing max_length-1 will be kept (make room for stop token)
+            min_length - minimum length of strings before stop token is added
             result_save_path - specify this if you want to save results of dataset preparation (saves time!)
             token_to_id - specify your own vocabulary to process sentences
             stop_token - specify token to place at end of strings
             unk_token - if not None, prunes all vocab that appears only once, replaces with unk_token
             regenerate - if True, regenerate vocabulary and numpy arrays even if they exist in the save path
             update_vocab - if using premade token_to_id, update vocab with words from strings
+            max_num_s - maximum number of sentences to use from input strings
+            vocab_min_freq - a word must appear at least this number of times in strings to be kept in vocab
+            keep_unk_sentences - if False, throw away strings that contain under min freq words
+            update_vocab - if token_to_id is provided, whether or not to add new vocab terms found in strings
+            nlp - if provided, uses nlp object for tokenization. Can save time if calling multiple string datasets
         """
         self.stop_token = stop_token
         self.unknown_token = unk_token
@@ -94,9 +100,9 @@ class StringDataset(arcadian.dataset.Dataset):
                 np.save(self.numpy_save_path, self.np_messages)
 
         # Trim results to max_number_of_sentences
-        if max_number_of_sentences is not None:
-            self.np_messages = self.np_messages[:max_number_of_sentences, :]
-            self.messages = self.messages[:max_number_of_sentences]
+        if max_num_s is not None:
+            self.np_messages = self.np_messages[:max_num_s, :]
+            self.messages = self.messages[:max_num_s]
 
     def _numpy_string_formatting_results_exist(self, result_save_path):
         """Check that all save files exist, return true in this case.

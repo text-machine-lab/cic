@@ -4,10 +4,9 @@ from cic.datasets.text_dataset import StringDataset
 
 
 class CornellMovieDialoguesDataset(StringDataset):
-    def __init__(self, cornell_movie_lines_file, max_message_length=30, token_to_id=None, num_examples=None, regenerate=False):
-        """Currently creates a dataset of utterances from the dataset, for use in training an autoencoder.
-        Does not return messsage -> response pairs as of now. max_message_length includes stop token, so really
-        the largest sentence the autoencoder can encode is one less than the max length!"""
+    def __init__(self, cornell_movie_lines_file, max_s_len=30, token_to_id=None, num_examples=None, regenerate=False):
+        """A flat array of strings from the Cornell Movie Dialogues dataset. Does not return message-response pairs
+        as of now. Data contains one feature 'message' which is a numpy encoded string."""
         self.num_examples = num_examples
 
         stop_token = '<STOP>'
@@ -15,7 +14,7 @@ class CornellMovieDialoguesDataset(StringDataset):
         messages = self._load_messages_from_cornell_movie_lines(cornell_movie_lines_file,
                                                                      max_number_of_messages=self.num_examples)
 
-        super().__init__(messages, max_message_length, token_to_id=token_to_id, stop_token=stop_token, regenerate=regenerate)
+        super().__init__(messages, max_s_len, token_to_id=token_to_id, stop_token=stop_token, regenerate=regenerate)
 
     def _load_messages_from_cornell_movie_lines(self, movie_lines_filename, max_number_of_messages=None):
         delimiter = ' +++$+++ '

@@ -1,5 +1,5 @@
 """Trains and predicts a model using a Match-LSTM and Answer Pointer. Design based on this paper:
-https://arxiv.org/pdf/1608.07905.pdf"""
+https://arxiv.org/pdf/1608.07905.pdf. Model is not currently working, should implement teacher-forcing!"""
 import json
 import pickle as pkl
 import sys
@@ -7,8 +7,9 @@ import sys
 import numpy as np
 import os
 import random
-from cic.qa import match_lstm, squad_tools as sdt
-from cic.qa.match_lstm import LEARNING_RATE, NUM_PARAGRAPHS, RNN_HIDDEN_DIM, NUM_EXAMPLES_TO_PRINT, \
+from cic.utils import squad_tools as sdt
+from cic.models import match_lstm
+from cic.models.match_lstm import LEARNING_RATE, NUM_PARAGRAPHS, RNN_HIDDEN_DIM, NUM_EXAMPLES_TO_PRINT, \
     TRAIN_FRAC, \
     VALIDATE_PROPER_INPUTS, RESTORE_FROM_SAVE, TRAIN_MODEL_BEFORE_PREDICTION, PREDICT_ON_TRAINING_EXAMPLES, NUM_EPOCHS, \
     PRINT_TRAINING_EXAMPLES, PRINT_VALIDATION_EXAMPLES, PRINT_ACCURACY_EVERY_N_BATCHES, BATCH_SIZE, KEEP_PROB, \

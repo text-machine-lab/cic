@@ -4,8 +4,7 @@ import time
 import numpy as np
 import tensorflow as tf
 
-from cic.chat_bots import chat_model
-from cic.qa import match_lstm
+from cic.models import chat_model, match_lstm
 
 MAX_MSG_LEN = 10
 MAX_NUM_MSGS = None

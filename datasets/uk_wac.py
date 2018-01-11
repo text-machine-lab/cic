@@ -5,7 +5,7 @@ from cic.datasets import text_dataset
 class UKWacDataset(text_dataset.StringDataset):
 
     def __init__(self, ukwac_path, result_save_path=None, token_to_id=None,
-                 max_length=30, regenerate=False, max_number_of_sentences=None,
+                 max_length=30, regenerate=False, max_num_s=None,
                  min_length=0):
         """Instantiate UK Wac dataset from raw ukwac_path file (slow). Store and load
         resulting training examples to and from result_path (fast). Separates dataset
@@ -54,4 +54,4 @@ class UKWacDataset(text_dataset.StringDataset):
                          result_save_path=result_save_path,
                          token_to_id=token_to_id,
                          regenerate=regenerate,
-                         max_number_of_sentences=max_number_of_sentences)
+                         max_num_s=max_num_s)

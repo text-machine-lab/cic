@@ -1,17 +1,15 @@
-"""Run sentence generation GAN"""
+"""Train and evaluate sentence generation GAN using the Toronto Book Corpus."""
 
 from sacred import Experiment
 import os
-from cic.gan.sgan import SentenceGenerationGAN, GaussianRandomDataset
-from cic.datasets.latent_ae import LatentUKWacDataset
-from cic.datasets.uk_wac import UKWacDataset
+from cic.models.sgan import SentenceGenerationGAN, GaussianRandomDataset
+from cic.datasets.latent_ae import LatentDataset
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
-from cic.ae.gm_autoencoder import AutoEncoder
-from arcadian.dataset import MergeDataset, DatasetPtr
+from cic.models.gm_autoencoder import AutoEncoder
+from arcadian.dataset import MergeDataset
 import cic.config
 import pickle
-import numpy as np
 
 ex = Experiment('sentence_gan')
 
@@ -21,8 +19,8 @@ def config():
     code_size = 600
     regenerate_latent_ukwac = False
     max_number_of_sentences = 2000000
-    num_generator_layers = 50
-    num_discriminator_layers = 50
+    num_gen_layers = 50
+    num_dsc_layers = 50
     sentence_gan_save_dir = os.path.join(cic.config.DATA_DIR, 'sentence_gan')
     num_epochs = 100
     restore_sentence_gan_from_save = False
@@ -30,14 +28,12 @@ def config():
     dsc_learning_rate = 0.0001
     max_len = 20
     keep_prob = 1.0
-    num_dsc_trains = 10
-
-    c = .001  # 10**(-num_discriminator_layers)/code_size  # D weight clipping
+    num_dsc_trains = 10  # number of times to train discriminator for every train of the generator
 
 @ex.automain
 def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_generator_layers, num_discriminator_layers,
          sentence_gan_save_dir, num_epochs, restore_sentence_gan_from_save, gen_learning_rate,
-         dsc_learning_rate, keep_prob, c, max_len, num_dsc_trains):
+         dsc_learning_rate, keep_prob, max_len, num_dsc_trains):
     print('Running program')
 
     # If we will reconstruct latent dataset, construct ukwac dataset and encoder portion of pretrained autoencoder.
@@ -64,8 +60,8 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
 
     # Build latent ukwac dataset, either by regenerating it or loading from saved results.
     print('Constructing latent UK Wac dataset')
-    latent_ukwac = LatentUKWacDataset(os.path.join(cic.config.DATA_DIR, 'latent_ukwac'), code_size,
-                                      ukwac=ds, autoencoder=encoder, regenerate=regenerate_latent_ukwac)
+    latent_ukwac = LatentDataset(os.path.join(cic.config.DATA_DIR, 'latent_ukwac'), code_size,
+                                 data=ds, autoencoder=encoder, regenerate=regenerate_latent_ukwac)
 
     z_dataset = GaussianRandomDataset(len(latent_ukwac), code_size, 'z')
 
@@ -86,8 +82,7 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
     if num_epochs > 0:
         gan.train(merge_dataset, parameter_dict={'gen_learning_rate': gen_learning_rate,
                                                  'dsc_learning_rate': dsc_learning_rate,
-                                                 'keep_prob': keep_prob,
-                                                 'c': c}, num_epochs=num_epochs)
+                                                 'keep_prob': keep_prob}, num_epochs=num_epochs)
 
     # Generate and print 100 examples!
     z_examples = GaussianRandomDataset(100, code_size, 'z')

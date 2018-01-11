@@ -1,11 +1,13 @@
+"""Trains an autoencoder (with arcadian integration) on the Cornell Movie Dialogues dataset (with arcadian integration)."""
+
 # EXECUTION ############################################################################################################
 import pickle
 
 import os
-import cic.qa.squad_tools as sdt
+import cic.utils.squad_tools as sdt
 
 from cic import config
-from cic.ae.gm_autoencoder import AutoEncoder
+from cic.models.gm_autoencoder import AutoEncoder
 from cic.datasets import cornell_movie_dialogues as cmd
 
 RESTORE_FROM_SAVE = False
@@ -17,7 +19,7 @@ if __name__ == '__main__':
         # Reuse vocabulary when restoring from save
         saved_token_to_id = pickle.load(open(os.path.join(SAVE_DIR, 'vocabulary.pkl'), 'rb'))
 
-    cmd_dataset = cmd.CornellMovieDialoguesDataset(max_message_length=10, token_to_id=saved_token_to_id,
+    cmd_dataset = cmd.CornellMovieDialoguesDataset(max_s_len=10, token_to_id=saved_token_to_id,
                                                    cornell_movie_lines_file=config.CORNELL_MOVIE_LINES_FILE)
 
     train_cmd, val_cmd = cmd_dataset.split(fraction=0.9, seed='hello world')

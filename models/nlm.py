@@ -39,9 +39,9 @@ class NeuralLanguageModelTraining(GenericModel):
 
         self.build_trainer(tf_message_logits, self.tf_messages)
 
-        self.inputs.update({'message': self.tf_messages})
+        self.i.update({'message': self.tf_messages})
 
-        self.outputs.update({'prediction': tf_message_prediction,
+        self.o.update({'prediction': tf_message_prediction,
                              'probabilities': tf_message_prob})
 
         self.load_scopes = ['LANGUAGE_MODEL']
@@ -173,11 +173,11 @@ class NeuralLanguageModelPrediction(GenericModel):
         # Set interface
         self.load_scopes = ['LANGUAGE_MODEL']
 
-        self.inputs.update({'teacher_signal': self.tf_teacher_signal,
+        self.i.update({'teacher_signal': self.tf_teacher_signal,
                             'hidden': self.tf_hidden,
                             'word': self.tf_word})
 
-        self.outputs.update({'prediction': tf_word_prediction,
+        self.o.update({'prediction': tf_word_prediction,
                              'probabilities': tf_word_prob,
                              'go_token': self.tf_go_token,
                              'word_emb': self.tf_word_emb,

@@ -1,6 +1,4 @@
-"""Converts a sentence of words into a latent representation, then converts that representation
-back into the original sentence, with some reconstruction loss. Latent space is continuous, and can
-be used in a GAN setting."""
+"""File to run vanilla autoencoder (no arcadian integration) on a vanilla Cornell Movie Dialogues dataset (no arcadian integration)."""
 import optparse
 import pickle
 
@@ -10,15 +8,13 @@ import os
 import random
 import spacy
 import tensorflow as tf
-from cic.chat_bots import mdd_tools as mddt
-from cic.qa import match_lstm, squad_tools as sdt
+from cic.utils import squad_tools as sdt, mdd_tools as mddt
 
 from cic import config
-from cic.ae import autoencoder
-from cic.ae.autoencoder import MAX_MSG_LEN, MAX_NUM_MSGS, STOP_TOKEN, RNN_HIDDEN_DIM, \
+from cic.models import autoencoder, chat_model, match_lstm
+from cic.models.autoencoder import MAX_MSG_LEN, MAX_NUM_MSGS, STOP_TOKEN, RNN_HIDDEN_DIM, \
     LEARNED_EMB_DIM, LEARNING_RATE, KEEP_PROB, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
     NUM_PRINT, VALIDATE, SAVE_TENSORBOARD, SHUFFLE
-from cic.chat_bots import chat_model
 
 # ARGUMENTS ############################################################################################################
 parser = optparse.OptionParser()

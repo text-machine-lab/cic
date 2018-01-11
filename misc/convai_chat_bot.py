@@ -5,11 +5,10 @@ import pickle
 import gensim
 import os
 import tensorflow as tf
-from cic.chat_bots import latent_chat
-from cic.qa import match_lstm, squad_tools as sdt
+from cic.models import latent_chat, chat_model, match_lstm
+from cic.utils import squad_tools as sdt
 
 from cic import config
-from cic.chat_bots import chat_model
 
 parser = optparse.OptionParser()
 parser.add_option('-s', '--save_dir', dest="save_dir", default=config.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')

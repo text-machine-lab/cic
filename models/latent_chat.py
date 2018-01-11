@@ -1,11 +1,10 @@
 """Supporting functions, classes and constants for latent_chat_model.py"""
 import numpy as np
 import tensorflow as tf
-from cic.qa import match_lstm, squad_tools as sdt
+from cic.utils import squad_tools as sdt
 
 from cic import config
-from cic.ae import autoencoder as aef
-from cic.chat_bots import chat_model
+from cic.models import autoencoder as aef, chat_model, match_lstm
 
 LEARNING_RATE = .00001
 NUM_EXAMPLES = None

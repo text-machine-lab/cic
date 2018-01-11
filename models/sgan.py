@@ -1,4 +1,7 @@
-"""2017 - Script for a GAN that generates sentences."""
+"""2017 - Script for a GAN that generates sentences. Uses Improved Wasserstein GAN implementation.
+GAN uses ResNet architecture for both generator and discriminator. Each residual layer uses a
+linear-relu-linear layer structure. No batch norm. The GAN generates latent representations of
+sentences."""
 
 import tensorflow as tf
 import arcadian.gm
@@ -18,11 +21,7 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         super().__init__(**kwargs)
 
     def build(self):
-        """Implement Tensorflow model and specify model placeholders and output tensors you wish to evaluate
-        using self.input_placeholders and self.output_tensors dictionaries. Specify each entry as a name:tensor pair.
-        Specify variable scopes to restore by adding to self.load_scopes list. Specify loss function to train on
-        by assigning loss tensor to self.loss variable. Read initialize_loss() documentation for adaptive
-        learning rates and evaluating loss tensor at runtime."""
+        """Override of Generic Model"""
 
         # Notice: self.inputs['code'] is label sample, while self.outputs['code'] is generated sample
 
@@ -31,9 +30,9 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
 
         # Build generator
         with tf.variable_scope('GENERATOR'):
-            self.outputs['code'] = self._build_generator(self.inputs['z'])
+            self.o['code'] = self._build_generator(self.i['z'])
 
-            assert self.outputs['code'].get_shape()[1] == self.code_size
+            assert self.o['code'].get_shape()[1] == self.code_size
 
         # Build descriminator
         with tf.variable_scope('DISCRIMINATOR') as scope:
@@ -41,15 +40,15 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
             self.dsc_scope = scope
             # Build two discriminators, one takes in generator output as input, the other
             # takes in true data samples.
-            self.outputs['fake_logits'] = self._build_discriminator(self.outputs['code'])
+            self.o['fake_logits'] = self._build_discriminator(self.o['code'])
 
-            assert len(self.outputs['fake_logits'].get_shape()) == 1
+            assert len(self.o['fake_logits'].get_shape()) == 1
 
             scope.reuse_variables()
 
-            self.outputs['real_logits'] = self._build_discriminator(self.inputs['code'])
+            self.o['real_logits'] = self._build_discriminator(self.i['code'])
 
-            assert len(self.outputs['real_logits'].get_shape()) == 1
+            assert len(self.o['real_logits'].get_shape()) == 1
 
         # Define loss
         with tf.variable_scope('TRAINER'):
@@ -61,17 +60,13 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         """Create latent space input"""
 
         # True label input to discriminator.
-        self.inputs['code'] = tf.placeholder(tf.float32, shape=(None, self.code_size), name='code')
+        self.i['code'] = tf.placeholder(tf.float32, shape=(None, self.code_size), name='code')
 
         # Random vector z input to generator.
-        self.inputs['z'] = tf.placeholder(tf.float32, shape=(None, self.code_size), name='z')
+        self.i['z'] = tf.placeholder(tf.float32, shape=(None, self.code_size), name='z')
 
-        self.inputs['gen_learning_rate'] = tf.placeholder_with_default(.001, ())
-        self.inputs['dsc_learning_rate'] = tf.placeholder_with_default(.001, ())
-        # Used in dropout
-        self.inputs['keep_prob'] = tf.placeholder_with_default(1.0, (), name='keep_prob')
-        # c value used for gradient clipping in Wasserstein GAN
-        self.inputs['c'] = tf.placeholder(dtype=tf.float32, shape=(), name='c')
+        self.i['gen_learning_rate'] = tf.placeholder_with_default(.001, ())
+        self.i['dsc_learning_rate'] = tf.placeholder_with_default(.001, ())
 
     def _build_generator(self, z):
         """Build ResNet generator mapping from input vector z to
@@ -105,9 +100,9 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         assert len(discriminator_variables) > 0
 
         # Norm clipping as suggested in 'Improved Training of Wasserstein GANs'
-        batch_size = tf.shape(self.inputs['code'])[0]
-        real_data = self.inputs['code']
-        fake_data = self.outputs['code']
+        batch_size = tf.shape(self.i['code'])[0]
+        real_data = self.i['code']
+        fake_data = self.o['code']
         LAMBDA = 10
 
         alpha = tf.random_uniform(
@@ -127,22 +122,22 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
         norm_loss = LAMBDA * gradient_penalty
 
-        self.outputs['gradient_norm'] = tf.reduce_mean(slopes)
+        self.o['gradient_norm'] = tf.reduce_mean(slopes)
 
         # Wasserstein losses
-        self.outputs['dsc_real_loss'] = -tf.reduce_mean(self.outputs['real_logits'])
-        self.outputs['dsc_fake_loss'] = tf.reduce_mean(self.outputs['fake_logits'])
+        self.o['dsc_real_loss'] = -tf.reduce_mean(self.o['real_logits'])
+        self.o['dsc_fake_loss'] = tf.reduce_mean(self.o['fake_logits'])
 
-        self.outputs['dsc_loss'] = self.outputs['dsc_fake_loss'] + self.outputs['dsc_real_loss'] + norm_loss
-        self.outputs['gen_loss'] = -self.outputs['dsc_fake_loss']
+        self.o['dsc_loss'] = self.o['dsc_fake_loss'] + self.o['dsc_real_loss'] + norm_loss
+        self.o['gen_loss'] = -self.o['dsc_fake_loss']
 
-        gen_lr = self.inputs['gen_learning_rate']
-        dsc_lr = self.inputs['dsc_learning_rate']
+        gen_lr = self.i['gen_learning_rate']
+        dsc_lr = self.i['dsc_learning_rate']
 
 
         # Create optimizers for generator and discriminator.
-        gen_op = tf.train.AdamOptimizer(gen_lr).minimize(self.outputs['gen_loss'], var_list=generator_variables)
-        dsc_op = tf.train.AdamOptimizer(dsc_lr).minimize(self.outputs['dsc_loss'], var_list=discriminator_variables)
+        gen_op = tf.train.AdamOptimizer(gen_lr).minimize(self.o['gen_loss'], var_list=generator_variables)
+        dsc_op = tf.train.AdamOptimizer(dsc_lr).minimize(self.o['dsc_loss'], var_list=discriminator_variables)
 
         # Clip discriminator weights to be small
         #d_clip_op = tf.group(*[d.assign(tf.clip_by_value(d, -self.inputs['c'], self.inputs['c'])) for d in discriminator_variables])

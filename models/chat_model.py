@@ -2,10 +2,9 @@
 import numpy as np
 import random
 import unittest2
-from cic.qa import squad_tools as sdt
+from cic.utils import squad_tools as sdt, mdd_tools as mddt
 
 from cic import config
-from cic.chat_bots import mdd_tools as mddt
 
 LEARNING_RATE = .0008
 NUM_CONVERSATIONS = None

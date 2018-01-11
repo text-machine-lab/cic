@@ -23,10 +23,10 @@ def example_basic_mnist():
             correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
 
             # Create interface
-            self.inputs['image'] = x
-            self.inputs['label'] = y_
-            self.outputs['prediction'] = y
-            self.outputs['accuracy'] = correct_prediction
+            self.i['image'] = x
+            self.i['label'] = y_
+            self.o['prediction'] = y
+            self.o['accuracy'] = correct_prediction
 
     mnist_model = MNISTModel()
 
@@ -47,7 +47,7 @@ def example_advanced_mnist_batch():
 
 
 def example_advanced_mnist(use_batch_mnist_dataset=False):
-    class ConvMNISTModel(arcadian.GenericModel):
+    class ConvMNISTModel(arcadian.gm.GenericModel):
         def build(self):
             """Copied from Tensorflow tutorial Deep MNIST example."""
             def weight_variable(shape):
@@ -100,20 +100,17 @@ def example_advanced_mnist(use_batch_mnist_dataset=False):
             correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))
 
             # Create interface
-            self.inputs['image'] = x
-            self.inputs['label'] = y_
-            self.inputs['keep prob'] = keep_prob
-            self.outputs['prediction'] = y_conv
-            self.outputs['accuracy'] = correct_prediction
+            self.i['image'] = x
+            self.i['label'] = y_
+            self.i['keep prob'] = keep_prob
+            self.o['prediction'] = y_conv
+            self.o['accuracy'] = correct_prediction
 
     mnist_model = ConvMNISTModel()
 
-    if use_batch_mnist_dataset:
-        mnist_train_set = arcadian.BatchMNISTTrainSet()
-    else:
-        mnist_train_set = arcadian.MNISTTrainSet()
+    mnist_train_set = MNISTTrainSet()
 
-    mnist_test_set = arcadian.MNISTTestSet()
+    mnist_test_set = MNISTTestSet()
 
     def train():
         train_dict = mnist_model.train(mnist_train_set, num_epochs=10, parameter_dict={'keep prob': .5})

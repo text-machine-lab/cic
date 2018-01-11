@@ -4,11 +4,11 @@ import numpy as np
 import os
 import spacy
 import tensorflow as tf
-from cic.qa import match_lstm, squad_tools as sdt
+from cic.utils import squad_tools as sdt
 
 from cic import config
-from cic.chat_bots import chat_model
-from cic.chat_bots.chat_model import LEARNING_RATE, NUM_EXAMPLES_TO_PRINT, MAX_MESSAGE_LENGTH, \
+from cic.models import chat_model, match_lstm
+from cic.models.chat_model import LEARNING_RATE, NUM_EXAMPLES_TO_PRINT, MAX_MESSAGE_LENGTH, \
     LEARNED_EMBEDDING_SIZE, \
     KEEP_PROB, \
     RNN_HIDDEN_DIM, TRAIN_FRACTION, BATCH_SIZE, NUM_EPOCHS, RESTORE_FROM_SAVE, REVERSE_INPUT_MESSAGE, STOP_TOKEN, \

@@ -1,8 +1,8 @@
 """In this script, we plot sentences from the Toronto Book Corpus dataset, and sentences generated
 from our fully-trained sentence GAN. We use TSNE for dimensionality reduction."""
 import cic.config
-from cic.datasets.latent_ae import LatentUKWacDataset
-from cic.gan.sgan import SentenceGenerationGAN, GaussianRandomDataset
+from cic.datasets.latent_ae import LatentDataset
+from cic.models.sgan import SentenceGenerationGAN, GaussianRandomDataset
 import os
 from sklearn.manifold import TSNE
 import matplotlib.pyplot
@@ -18,8 +18,8 @@ sentence_gan_save_dir = os.path.join(cic.config.DATA_DIR, 'sentence_gan')
 restore_sentence_gan_from_save = False
 max_len = 20
 
-ds = LatentUKWacDataset(os.path.join(cic.config.DATA_DIR, 'latent_ukwac'), code_size,
-                                  ukwac=None, autoencoder=None, regenerate=False)
+ds = LatentDataset(os.path.join(cic.config.DATA_DIR, 'latent_ukwac'), code_size,
+                   data=None, autoencoder=None, regenerate=False)
 
 gan = SentenceGenerationGAN(code_size=code_size, num_gen_layers=num_generator_layers,
                             num_dsc_layers=num_discriminator_layers,
