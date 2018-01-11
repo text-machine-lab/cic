@@ -9,6 +9,8 @@ BOOK_CORPUS_P1 = os.path.join(DATA_DIR, 'books_large_p1.txt')
 BOOK_CORPUS_P2 = os.path.join(DATA_DIR, 'books_large_p2.txt')
 BOOK_CORPUS_RESULT = os.path.join(DATA_DIR, 'book_corpus')
 
+NLM_SAVE_DIR = os.path.join(DATA_DIR, 'nlm', '')
+
 UKWAC_PATH = '/data2/arogers/Corpora/En/UkWac/Plain-txt/ukwac_subset_100M.txt'
 UKWAC_RESULT_PATH = os.path.join(DATA_DIR, 'ukwac')
 

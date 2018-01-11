@@ -2,14 +2,15 @@
 
 from sacred import Experiment
 import os
-from cic.generative_adversarial_networks.sentence_generation_gan import SentenceGenerationGAN, GaussianRandomDataset
-from cic.gemtk_datasets.latent_uk_wac_dataset import LatentUKWacDataset
-from cic.gemtk_datasets.uk_wac_dataset import UKWacDataset
-from cic.gemtk_datasets.book_corpus_dataset import TorontoBookCorpus
-from cic.gemtk_datasets.string_dataset import convert_numpy_array_to_strings
-from cic.autoencoders.gm_auto_encoder import AutoEncoder
+from cic.gan.sgan import SentenceGenerationGAN, GaussianRandomDataset
+from cic.datasets.latent_ae import LatentUKWacDataset
+from cic.datasets.uk_wac import UKWacDataset
+from cic.datasets.book_corpus import TorontoBookCorpus
+from cic.datasets.text_dataset import convert_numpy_array_to_strings
+from cic.ae.gm_autoencoder import AutoEncoder
 from arcadian.dataset import MergeDataset, DatasetPtr
 import cic.config
+import pickle
 import numpy as np
 
 ex = Experiment('sentence_gan')
@@ -20,8 +21,8 @@ def config():
     code_size = 600
     regenerate_latent_ukwac = False
     max_number_of_sentences = 2000000
-    num_generator_layers = 40
-    num_discriminator_layers = 40
+    num_generator_layers = 50
+    num_discriminator_layers = 50
     sentence_gan_save_dir = os.path.join(cic.config.DATA_DIR, 'sentence_gan')
     num_epochs = 100
     restore_sentence_gan_from_save = False
@@ -29,13 +30,14 @@ def config():
     dsc_learning_rate = 0.0001
     max_len = 20
     keep_prob = 1.0
+    num_dsc_trains = 10
 
     c = .001  # 10**(-num_discriminator_layers)/code_size  # D weight clipping
 
 @ex.automain
 def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_generator_layers, num_discriminator_layers,
          sentence_gan_save_dir, num_epochs, restore_sentence_gan_from_save, gen_learning_rate,
-         dsc_learning_rate, keep_prob, c, max_len):
+         dsc_learning_rate, keep_prob, c, max_len, num_dsc_trains):
     print('Running program')
 
     # If we will reconstruct latent dataset, construct ukwac dataset and encoder portion of pretrained autoencoder.
@@ -72,8 +74,11 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
     print('Length of Latent UK Wac dataset: %s' % len(latent_ukwac))
 
     # Construct SentenceGAN.
+    print('Constructing Sentence GAN')
+
     gan = SentenceGenerationGAN(code_size=code_size, num_gen_layers=num_generator_layers,
                                 num_dsc_layers=num_discriminator_layers,
+                                num_dsc_trains=num_dsc_trains,
                                 save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
                                 restore_from_save=restore_sentence_gan_from_save)
 
@@ -92,10 +97,14 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
 
     assert len(generated_codes['code']) == 100
 
+    print('Constructing autoencoder')
+
     # Create decoder to convert latent sentences back to English
     decoder = AutoEncoder(len(ds.vocab), save_dir=cic.config.GM_AE_SAVE_DIR,
-                          restore_from_save=True, max_len=10, rnn_size=code_size,
+                          restore_from_save=True, max_len=max_len, rnn_size=code_size,
                           encoder=False, decoder=True)
+
+    print('Generating sentences')
 
     generated_np_sentences = decoder.predict(generated_codes, output_tensor_names=['train_prediction'])['train_prediction']
 
@@ -112,4 +121,6 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
 
     for each_sentence in generated_sentences:
         print(each_sentence)
+
+    pickle.dump(generated_sentences, open(os.path.join(cic.config.DATA_DIR, 'gan_messages.pkl'), 'wb'))
 

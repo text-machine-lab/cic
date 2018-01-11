@@ -10,15 +10,15 @@ import os
 import random
 import spacy
 import tensorflow as tf
-from cic.chat_bots import movie_dialogue_dataset_tools as mddt
-from cic.question_answering import baseline_model_func, squad_dataset_tools as sdt
+from cic.chat_bots import mdd_tools as mddt
+from cic.qa import match_lstm, squad_tools as sdt
 
 from cic import config
-from cic.autoencoders import auto_encoder_func
-from cic.autoencoders.auto_encoder_func import MAX_MESSAGE_LENGTH, MAX_NUMBER_OF_MESSAGES, STOP_TOKEN, RNN_HIDDEN_DIM, \
-    LEARNED_EMBEDDING_SIZE, LEARNING_RATE, KEEP_PROB, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
-    NUM_EXAMPLES_TO_PRINT, VALIDATE_ENCODER_AND_DECODER, SAVE_TENSORBOARD_VISUALIZATION, SHUFFLE_EXAMPLES
-from cic.chat_bots import chat_model_func
+from cic.ae import autoencoder
+from cic.ae.autoencoder import MAX_MSG_LEN, MAX_NUM_MSGS, STOP_TOKEN, RNN_HIDDEN_DIM, \
+    LEARNED_EMB_DIM, LEARNING_RATE, KEEP_PROB, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
+    NUM_PRINT, VALIDATE, SAVE_TENSORBOARD, SHUFFLE
+from cic.chat_bots import chat_model
 
 # ARGUMENTS ############################################################################################################
 parser = optparse.OptionParser()
@@ -29,7 +29,7 @@ parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default
 parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='test reconstruction of autoencoder')
 #parser.add_option('-f', '--teacher_force', dest='teacher_force', default=False, action='store_true', help='use teacher forcing in decoder')
 parser.add_option('-v', '--variational', dest='variational', default=False, action='store_true', help='use variational loss')
-parser.add_option('-m', '--max_messages', dest='max_messages', default=MAX_NUMBER_OF_MESSAGES, help='specify maximum number of messages to train and test on')
+parser.add_option('-m', '--max_messages', dest='max_messages', default=MAX_NUM_MSGS, help='specify maximum number of messages to train and test on')
 
 (options, args) = parser.parse_args()
 
@@ -44,7 +44,7 @@ config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR
 if options.max_messages is not None:
     MAX_NUMBER_OF_MESSAGES = int(options.max_messages)
 
-auto_encoder_func.VARIATIONAL = options.variational
+autoencoder.VARIATIONAL = options.variational
 RESTORE_FROM_SAVE = options.restore_from_save
 
 print('Number of epochs: %s' % NUM_EPOCHS)
@@ -65,10 +65,10 @@ nlp = spacy.load('en')
 print('Loading messages...')
 messages = mddt.load_messages_from_cornell_movie_lines(config.CORNELL_MOVIE_LINES_FILE, nlp,
                                                        max_number_of_messages=MAX_NUMBER_OF_MESSAGES,
-                                                       max_message_length=MAX_MESSAGE_LENGTH,
+                                                       max_message_length=MAX_MSG_LEN,
                                                        stop_token=STOP_TOKEN)
 print('Number of Movie Dialogue messages: %s' % len(messages))
-if auto_encoder_func.USE_REDDIT_MESSAGES:
+if autoencoder.USE_REDDIT:
     all_reddit_comments = []
     for filename in os.listdir(config.REDDIT_COMMENTS_DUMP):
         reddit_comment_file = open(os.path.join(config.REDDIT_COMMENTS_DUMP, filename), 'rb')
@@ -78,16 +78,16 @@ if auto_encoder_func.USE_REDDIT_MESSAGES:
     for i in range(10):
         print(all_reddit_comments[i])
 
-    reddit_messages = [comment.split() for comment in all_reddit_comments if len(comment.split()) <= MAX_MESSAGE_LENGTH]
+    reddit_messages = [comment.split() for comment in all_reddit_comments if len(comment.split()) <= MAX_MSG_LEN]
 
     print('Number of Reddit messages: %s' % len(reddit_messages))
 
     # Combine Dialogue and Reddit comments
     messages += reddit_messages
 
-if auto_encoder_func.SEED is not None:
-    random.seed(auto_encoder_func.SEED)
-if SHUFFLE_EXAMPLES:
+if autoencoder.SEED is not None:
+    random.seed(autoencoder.SEED)
+if SHUFFLE:
     random.shuffle(messages)
 
 np_message_lengths = np.array([len(message) for message in messages])
@@ -118,7 +118,7 @@ for i in range(10):
     print(i, vocabulary[i])
 
 print('Constructing numpy array')
-np_messages = chat_model_func.construct_numpy_from_messages(messages, vocab_dict, MAX_MESSAGE_LENGTH)
+np_messages = chat_model.construct_numpy_from_messages(messages, vocab_dict, MAX_MSG_LEN)
 num_messages = np_messages.shape[0]
 print('np_messages shape: %s' % str(np_messages.shape))
 
@@ -129,22 +129,22 @@ message_reconstruct = sdt.convert_numpy_array_to_strings(np_messages, vocabulary
 for i in range(len(messages)):
     each_message = ' '.join(messages[i])
 
-    if len(messages[i]) <= MAX_MESSAGE_LENGTH:
+    if len(messages[i]) <= MAX_MSG_LEN:
         assert each_message == message_reconstruct[i]
 
 # BUILD GRAPH ##########################################################################################################
 
 print('Building model...')
 with tf.Graph().as_default() as autoencoder_graph:
-    auto_encoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
-                                                 MAX_MESSAGE_LENGTH, encoder=True, decoder=True,
-                                                 save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
-                                                 load_from_save=RESTORE_FROM_SAVE,
-                                                 learning_rate=LEARNING_RATE,
-                                                 variational=auto_encoder_func.VARIATIONAL,
-                                                 use_teacher_forcing=True)
-    if SAVE_TENSORBOARD_VISUALIZATION:
-        baseline_model_func.create_tensorboard_visualization('chat')
+    auto_encoder = autoencoder.AutoEncoder(LEARNED_EMB_DIM, vocabulary_length, RNN_HIDDEN_DIM,
+                                           MAX_MSG_LEN, encoder=True, decoder=True,
+                                           save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                           load_from_save=RESTORE_FROM_SAVE,
+                                           learning_rate=LEARNING_RATE,
+                                           variational=autoencoder.VARIATIONAL,
+                                           use_teacher_forcing=True)
+    if SAVE_TENSORBOARD:
+        match_lstm.create_tensorboard_visualization('chat')
 
 # TRAIN ################################################################################################################
 
@@ -188,7 +188,7 @@ print(np_val_messages.shape)
 num_validation_examples_correct = 0
 for index, message_reconstruct in enumerate(val_message_reconstruct):
     original_message = ' '.join(messages[num_train_messages + index])
-    if index < NUM_EXAMPLES_TO_PRINT:
+    if index < NUM_PRINT:
         print(message_reconstruct, '\t\t\t|||', original_message)
     if original_message == message_reconstruct:
         num_validation_examples_correct += 1
@@ -197,22 +197,22 @@ validation_accuracy = num_validation_examples_correct / num_val_messages
 print('Validation EM accuracy: %s' % validation_accuracy)
 
 with tf.Graph().as_default() as encoder_graph:
-    encoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
-                                            MAX_MESSAGE_LENGTH, encoder=True, decoder=False,
-                                            save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
-                                            load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
-                                            learning_rate=LEARNING_RATE,
-                                            variational=auto_encoder_func.VARIATIONAL)
+    encoder = auto_encoder.AutoEncoder(LEARNED_EMB_DIM, vocabulary_length, RNN_HIDDEN_DIM,
+                                       MAX_MSG_LEN, encoder=True, decoder=False,
+                                       save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                       load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
+                                       learning_rate=LEARNING_RATE,
+                                       variational=auto_encoder.VARIATIONAL)
 
 with tf.Graph().as_default() as decoder_graph:
-    decoder = auto_encoder_func.AutoEncoder(LEARNED_EMBEDDING_SIZE, vocabulary_length, RNN_HIDDEN_DIM,
-                                            MAX_MESSAGE_LENGTH, encoder=False, decoder=True,
-                                            save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
-                                            load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
-                                            learning_rate=LEARNING_RATE,
-                                            variational=auto_encoder_func.VARIATIONAL)
+    decoder = auto_encoder.AutoEncoder(LEARNED_EMB_DIM, vocabulary_length, RNN_HIDDEN_DIM,
+                                       MAX_MSG_LEN, encoder=False, decoder=True,
+                                       save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                       load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
+                                       learning_rate=LEARNING_RATE,
+                                       variational=auto_encoder.VARIATIONAL)
 
-if VALIDATE_ENCODER_AND_DECODER:
+if VALIDATE:
     np_val_latent = encoder.encode(np_val_messages, BATCH_SIZE)
     val_latent_avg_magnitude = np.mean(np.abs(np_val_latent))
     val_latent_std = np.std(np_val_latent)
@@ -232,7 +232,7 @@ if options.bot:
                 your_message = input('Message: ')
                 if your_message == 'exit':
                     break
-                np_your_message = auto_encoder_func.convert_string_to_numpy(your_message, nlp, vocab_dict)
+                np_your_message = auto_encoder.convert_string_to_numpy(your_message, nlp, vocab_dict)
                 np_your_message_reconstruct = auto_encoder.reconstruct(np_your_message, 1)
                 your_message_reconstruct = sdt.convert_numpy_array_to_strings(np_your_message_reconstruct, vocabulary,
                                                                               stop_token=STOP_TOKEN,
@@ -247,8 +247,8 @@ if options.bot:
                 num_increments = int(input('Number of INCREMENTS: '))
                 first_message = input('First message: ')
                 second_message = input('Second message: ')
-                np_first_message = auto_encoder_func.convert_string_to_numpy(first_message, nlp, vocab_dict)
-                np_second_message = auto_encoder_func.convert_string_to_numpy(second_message, nlp, vocab_dict)
+                np_first_message = auto_encoder.convert_string_to_numpy(first_message, nlp, vocab_dict)
+                np_second_message = auto_encoder.convert_string_to_numpy(second_message, nlp, vocab_dict)
                 np_first_latent = encoder.encode(np_first_message, BATCH_SIZE)
                 np_second_latent = encoder.encode(np_second_message, BATCH_SIZE)
                 np_increment = (np_first_latent - np_second_latent) / num_increments

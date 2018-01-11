@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 
 import arcadian.gm
-from cic.gemtk_datasets.mnist_datasets import MNISTTrainSet, MNISTTestSet
+from cic.datasets.mnist import MNISTTrainSet, MNISTTestSet
 
 
 def example_basic_mnist():

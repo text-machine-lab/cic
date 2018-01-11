@@ -2,11 +2,11 @@
 import pickle
 
 import os
-import cic.question_answering.squad_dataset_tools as sdt
+import cic.qa.squad_tools as sdt
 
 from cic import config
-from cic.autoencoders.gm_auto_encoder import AutoEncoder
-from cic.gemtk_datasets import cornell_movie_dialogues_dataset as cmd
+from cic.ae.gm_autoencoder import AutoEncoder
+from cic.datasets import cornell_movie_dialogues as cmd
 
 RESTORE_FROM_SAVE = False
 SAVE_DIR = './data/autoencoder/first/'

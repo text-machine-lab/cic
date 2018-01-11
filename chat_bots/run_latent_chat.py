@@ -6,19 +6,19 @@ import pickle
 import numpy as np
 import os
 import spacy
-from cic.chat_bots import latent_chat_func
-from cic.question_answering import squad_dataset_tools as sdt
+from cic.chat_bots import latent_chat
+from cic.qa import squad_tools as sdt
 
 from cic import config
-from cic.autoencoders import auto_encoder_func as aef
-from cic.chat_bots import chat_model_func
+from cic.ae import autoencoder as aef
+from cic.chat_bots import chat_model
 
 
 def parse_command_line_arguments():
     parser = optparse.OptionParser()
     parser.add_option('-t', '--train', dest="train", default=False, action='store_true', help='train model for the specified number of epochs, and save')
     parser.add_option('-s', '--save_dir', dest="save_dir", default=config.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
-    parser.add_option('-n', '--num_epochs', dest="num_epochs", default=latent_chat_func.NUM_EPOCHS, help='specify number of epochs to train for')
+    parser.add_option('-n', '--num_epochs', dest="num_epochs", default=latent_chat.NUM_EPOCHS, help='specify number of epochs to train for')
     parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
     parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, action='store_true', help='load model parameters from specified save directory')
     parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='talk with chat bot')
@@ -28,15 +28,15 @@ def parse_command_line_arguments():
     (options, args) = parser.parse_args()
 
     if not options.train:
-        latent_chat_func.NUM_EPOCHS = 0
+        latent_chat.NUM_EPOCHS = 0
     else:
-        latent_chat_func.NUM_EPOCHS = int(options.num_epochs)
+        latent_chat.NUM_EPOCHS = int(options.num_epochs)
     config.LATENT_CHAT_MODEL_SAVE_DIR = options.save_dir
-    latent_chat_func.RESTORE_FROM_SAVE = options.restore_from_save
+    latent_chat.RESTORE_FROM_SAVE = options.restore_from_save
 
     aef.VARIATIONAL = options.variational
 
-    latent_chat_func.PRE_PROCESS = options.preprocess
+    latent_chat.PRE_PROCESS = options.preprocess
 
     config.AUTO_ENCODER_MODEL_SAVE_DIR = options.auto_encoder_save_dir
     config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
@@ -45,7 +45,7 @@ def parse_command_line_arguments():
 
 
 def print_examples(examples):
-    if latent_chat_func.NUM_EXAMPLES is None or latent_chat_func.NUM_EXAMPLES > 10:
+    if latent_chat.NUM_EXAMPLES is None or latent_chat.NUM_EXAMPLES > 10:
         for i in range(10):
             print(examples[i])
     else:
@@ -54,19 +54,19 @@ def print_examples(examples):
 
 
 def pre_process_latent_chat_model_data(vocab_dict, nlp):
-    examples, np_message, np_response, _vocab_dict_, _vocabulary_ = chat_model_func.preprocess_all_cornell_conversations(
+    examples, np_message, np_response, _vocab_dict_, _vocabulary_ = chat_model.preprocess_all_cornell_conversations(
         nlp,
         vocab_dict=vocab_dict,
         reverse_inputs=False,
-        max_message_length=aef.MAX_MESSAGE_LENGTH)
+        max_message_length=aef.MAX_MSG_LEN)
 
     assert vocab_dict == _vocab_dict_
     assert vocabulary == _vocabulary_
 
-    if latent_chat_func.NUM_EXAMPLES is not None:
-        examples = examples[:latent_chat_func.NUM_EXAMPLES]
-        np_message = np_message[:latent_chat_func.NUM_EXAMPLES, :]
-        np_response = np_response[:latent_chat_func.NUM_EXAMPLES, :]
+    if latent_chat.NUM_EXAMPLES is not None:
+        examples = examples[:latent_chat.NUM_EXAMPLES]
+        np_message = np_message[:latent_chat.NUM_EXAMPLES, :]
+        np_response = np_response[:latent_chat.NUM_EXAMPLES, :]
 
     print('Converting messages into latent space')
     np_latent_message = lcm.encoder.encode(np_message, aef.BATCH_SIZE)
@@ -122,21 +122,21 @@ def validate_latent_chat_model_data():
 
 options = parse_command_line_arguments()
 
-print('Number of epochs: %s' % latent_chat_func.NUM_EPOCHS)
+print('Number of epochs: %s' % latent_chat.NUM_EPOCHS)
 print('Model save directory: %s' % config.LATENT_CHAT_MODEL_SAVE_DIR)
 
 print('Loading vocabulary...')
 vocab_dict = pickle.load(open(config.AUTO_ENCODER_VOCAB_DICT, 'rb'))
 vocabulary = sdt.invert_dictionary(vocab_dict)
 
-lcm = latent_chat_func.LatentChatModel(len(vocab_dict), latent_chat_func.LEARNING_RATE,
-                                       config.LATENT_CHAT_MODEL_SAVE_DIR,
-                                       ae_save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
-                                       restore_from_save=latent_chat_func.RESTORE_FROM_SAVE)
+lcm = latent_chat.LatentChatModel(len(vocab_dict), latent_chat.LEARNING_RATE,
+                                  config.LATENT_CHAT_MODEL_SAVE_DIR,
+                                  ae_save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                  restore_from_save=latent_chat.RESTORE_FROM_SAVE)
 
 nlp = spacy.load('en')
 
-if latent_chat_func.PRE_PROCESS:
+if latent_chat.PRE_PROCESS:
     print('Pre-processing all input data...')
     pre_processing_dump_dict = pre_process_latent_chat_model_data(vocab_dict, nlp)
     print('Saving pre-processed data')
@@ -153,7 +153,7 @@ np_latent_response = pre_processing_dump_dict['latent_response']
 
 print_examples(examples)
 
-if latent_chat_func.VALIDATE_INPUTS:
+if latent_chat.VALIDATE_INPUTS:
     num_messages_correctly_reconstructed, num_responses_correctly_reconstructed = validate_latent_chat_model_data()
 
     print('Fraction of correctly encoded messages: %s' % (num_messages_correctly_reconstructed / len(examples)))
@@ -167,13 +167,13 @@ np_mean_latent_response = np.mean(np_latent_response, axis=0)
 mean_latent_loss = np.mean(np.square(np_latent_response - np_mean_latent_response))
 print('Baseline mean latent loss (no access to input): %s' % mean_latent_loss)
 
-lcm.train(np_latent_message, np_latent_response, latent_chat_func.NUM_EPOCHS, latent_chat_func.BATCH_SIZE, latent_chat_func.KEEP_PROB)
+lcm.train(np_latent_message, np_latent_response, latent_chat.NUM_EPOCHS, latent_chat.BATCH_SIZE, latent_chat.KEEP_PROB)
 
-if latent_chat_func.CALCULATE_TRAIN_ACCURACY:
+if latent_chat.CALCULATE_TRAIN_ACCURACY:
     num_samples_for_accuracy_prediction = 1000
     print('Predicting train accuracy...')
-    np_train_latent_predictions = lcm.predict(np_latent_message[:num_samples_for_accuracy_prediction, :], latent_chat_func.BATCH_SIZE)
-    np_train_predictions = lcm.decoder.decode(np_train_latent_predictions, latent_chat_func.BATCH_SIZE)
+    np_train_latent_predictions = lcm.predict(np_latent_message[:num_samples_for_accuracy_prediction, :], latent_chat.BATCH_SIZE)
+    np_train_predictions = lcm.decoder.decode(np_train_latent_predictions, latent_chat.BATCH_SIZE)
     train_predictions = sdt.convert_numpy_array_to_strings(np_train_predictions, vocabulary,
                                                            stop_token=aef.STOP_TOKEN,
                                                            keep_stop_token=True)

@@ -1,7 +1,7 @@
 """Tests for TorontoBookCorpus dataset class."""
 import unittest2
-from cic.gemtk_datasets.book_corpus_dataset import TorontoBookCorpus
-from cic.gemtk_datasets.string_dataset import convert_numpy_array_to_strings
+from cic.datasets.book_corpus import TorontoBookCorpus
+from cic.datasets.text_dataset import convert_numpy_array_to_strings
 import cic.config
 
 class TorontoBookCorpusTest(unittest2.TestCase):

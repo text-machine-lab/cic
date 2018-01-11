@@ -1,8 +1,8 @@
 """UK WAC dataset."""
-from cic.gemtk_datasets import string_dataset
+from cic.datasets import text_dataset
 
 
-class UKWacDataset(string_dataset.StringDataset):
+class UKWacDataset(text_dataset.StringDataset):
 
     def __init__(self, ukwac_path, result_save_path=None, token_to_id=None,
                  max_length=30, regenerate=False, max_number_of_sentences=None,

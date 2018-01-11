@@ -1,6 +1,6 @@
-from cic.gemtk_datasets.latent_uk_wac_dataset import LatentUKWacDataset
-from cic.gemtk_datasets.uk_wac_dataset import UKWacDataset
-from cic.autoencoders.gm_auto_encoder import AutoEncoder
+from cic.datasets.latent_ae import LatentUKWacDataset
+from cic.datasets.uk_wac import UKWacDataset
+from cic.ae.gm_autoencoder import AutoEncoder
 import os
 import cic.config
 import numpy as np

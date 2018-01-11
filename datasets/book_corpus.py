@@ -1,5 +1,5 @@
 """Toronto Book Corpus implemented as a subclass of StringDataset."""
-from cic.gemtk_datasets.string_dataset import StringDataset
+from cic.datasets.text_dataset import StringDataset
 import cic.config
 import os
 import h5py
@@ -69,13 +69,17 @@ class TorontoBookCorpus(Dataset):
                 accept = True
 
                 # Any filtering of strings goes here.
+
+                # Sentences can only contain letters and periods
                 for c in line:
-                    if c.isdigit():
+                    if not c.isalpha() and c != ' ' and c != '.':
                         accept = False
 
+                # Remove sentences with duplicate adjacent words
                 for index in range(len(line_tokens) - 1):
                     if line_tokens[index] == line_tokens[index+1]:
                         accept = False
+
 
                 if accept:
                     strings.append(line)

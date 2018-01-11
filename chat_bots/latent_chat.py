@@ -1,11 +1,11 @@
 """Supporting functions, classes and constants for latent_chat_model.py"""
 import numpy as np
 import tensorflow as tf
-from cic.question_answering import baseline_model_func, squad_dataset_tools as sdt
+from cic.qa import match_lstm, squad_tools as sdt
 
 from cic import config
-from cic.autoencoders import auto_encoder_func as aef
-from cic.chat_bots import chat_model_func
+from cic.ae import autoencoder as aef
+from cic.chat_bots import chat_model
 
 LEARNING_RATE = .00001
 NUM_EXAMPLES = None
@@ -25,22 +25,22 @@ class LatentChatModel:
         self.restore_from_save = restore_from_save
 
         with tf.Graph().as_default():
-            self.encoder = aef.AutoEncoder(aef.LEARNED_EMBEDDING_SIZE, vocab_size,
-                                      aef.RNN_HIDDEN_DIM,
-                                      aef.MAX_MESSAGE_LENGTH, encoder=True, decoder=False,
-                                      save_dir=ae_save_dir,
-                                      load_from_save=True,
-                                      learning_rate=aef.LEARNING_RATE,
-                                      variational=False)
+            self.encoder = aef.AutoEncoder(aef.LEARNED_EMB_DIM, vocab_size,
+                                           aef.RNN_HIDDEN_DIM,
+                                           aef.MAX_MSG_LEN, encoder=True, decoder=False,
+                                           save_dir=ae_save_dir,
+                                           load_from_save=True,
+                                           learning_rate=aef.LEARNING_RATE,
+                                           variational=False)
 
         with tf.Graph().as_default():
-            self.decoder = aef.AutoEncoder(aef.LEARNED_EMBEDDING_SIZE, vocab_size,
-                                      aef.RNN_HIDDEN_DIM,
-                                      aef.MAX_MESSAGE_LENGTH, encoder=False, decoder=True,
-                                      save_dir=ae_save_dir,
-                                      load_from_save=True,
-                                      learning_rate=aef.LEARNING_RATE,
-                                      variational=False)
+            self.decoder = aef.AutoEncoder(aef.LEARNED_EMB_DIM, vocab_size,
+                                           aef.RNN_HIDDEN_DIM,
+                                           aef.MAX_MSG_LEN, encoder=False, decoder=True,
+                                           save_dir=ae_save_dir,
+                                           load_from_save=True,
+                                           learning_rate=aef.LEARNING_RATE,
+                                           variational=False)
 
         self.tf_latent_message, self.tf_latent_prediction, self.tf_keep_prob = self.build(NUM_LAYERS)
         self.tf_latent_response, self.tf_total_loss, self.train_op = self.build_trainer(self.tf_latent_prediction)
@@ -76,17 +76,17 @@ class LatentChatModel:
                 with tf.variable_scope('RESIDUAL_' + str(i)):
                     tf_input_dropout = tf.nn.dropout(tf_input, tf_keep_prob)
                     with tf.variable_scope('INPUT_LAYER'):
-                        tf_relu, tf_w1, tf_b1 = baseline_model_func.create_dense_layer(tf_input_dropout, input_size,
-                                                                                       input_size,
-                                                                                       use_xavier=True,
-                                                                                       activation='relu',
-                                                                                       std=.0001)
+                        tf_relu, tf_w1, tf_b1 = match_lstm.create_dense_layer(tf_input_dropout, input_size,
+                                                                              input_size,
+                                                                              use_xavier=True,
+                                                                              activation='relu',
+                                                                              std=.0001)
                     with tf.variable_scope('OUTPUT_LAYER'):
-                        tf_output, tf_w2, tf_b2 = baseline_model_func.create_dense_layer(tf_relu, input_size,
-                                                                                         input_size,
-                                                                                         use_xavier=True,
-                                                                                         activation=None,
-                                                                                         std=.0001)
+                        tf_output, tf_w2, tf_b2 = match_lstm.create_dense_layer(tf_relu, input_size,
+                                                                                input_size,
+                                                                                use_xavier=True,
+                                                                                activation=None,
+                                                                                std=.0001)
                     tf_input = tf_input + tf_output
 
             tf_latent_prediction = tf_input[:, :aef.RNN_HIDDEN_DIM]
@@ -101,7 +101,7 @@ class LatentChatModel:
         return tf_latent_response, tf_total_loss, train_op
 
     def predict(self, np_latent_message, batch_size):
-        latent_batch_gen = chat_model_func.BatchGenerator([np_latent_message], batch_size)
+        latent_batch_gen = chat_model.BatchGenerator([np_latent_message], batch_size)
 
         all_batch_responses = []
         for np_message_batch in latent_batch_gen.generate_batches():
@@ -128,7 +128,7 @@ class LatentChatModel:
         for epoch in range(num_epochs):
             print('Epoch: %s' % epoch)
             per_print_losses = []
-            latent_batch_gen = chat_model_func.BatchGenerator([np_latent_message, np_latent_response], batch_size)
+            latent_batch_gen = chat_model.BatchGenerator([np_latent_message, np_latent_response], batch_size)
 
             for np_message_batch, np_response_batch in latent_batch_gen.generate_batches():
                 assert np_message_batch.shape[0] != 0

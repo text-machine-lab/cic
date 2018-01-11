@@ -1,6 +1,6 @@
 import unittest2
 
-from cic.gemtk_datasets.mnist_datasets import MNISTTestSet
+from cic.datasets.mnist import MNISTTestSet
 
 
 class MNISTDatasetsTest(unittest2.TestCase):
