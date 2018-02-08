@@ -8,7 +8,7 @@ import spacy
 import arcadian.dataset
 
 
-class StringDataset(arcadian.dataset.Dataset):
+class TextDataset(arcadian.dataset.Dataset):
     def __init__(self, strings, max_length, min_length=None, result_save_path=None, token_to_id=None,
                  stop_token='<STOP>', unk_token='<UNK>', regenerate=False, max_num_s=None,
                  vocab_min_freq=0, keep_unk_sentences=True, update_vocab=True, nlp=None):

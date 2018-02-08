@@ -19,19 +19,22 @@ def config():
     rnn_size = 600  # lstm hidden state size
     restore = False  # restore model from saved parameters
     save_dir = cic.config.NLM_SAVE_DIR  # where to store model parameters
-    num_epochs = 5
+    num_epochs = 0
     num_samples = 2000  # number of sentences to generate after training
+    result_save_dir = os.path.join(cic.config.DATA_DIR, 'nlm_messages.pkl')  # save generated sentences to disk
+    embs_save_dir = os.path.join(cic.config.DATA_DIR, 'nlm_embs.npy')  # save learned nlm embeddings to disk after prediction
 
 
 @ex.automain
-def main(max_num_s, max_len, emb_size, rnn_size, restore, save_dir, num_epochs, num_samples):
+def main(max_num_s, max_len, emb_size, rnn_size, restore, save_dir,
+         num_epochs, num_samples, embs_save_dir, result_save_dir):
 
     ds = TorontoBookCorpus(20, result_path=cic.config.BOOK_CORPUS_RESULT,
                             min_length=5, max_num_s=max_num_s, keep_unk_sentences=False,
                             vocab_min_freq=5, vocab=None, regenerate=False)
 
     nlm_train = NeuralLanguageModelTraining(max_len, len(ds.vocab), emb_size, rnn_size, save_dir=save_dir,
-                                            tensorboard_name='nlm', restore_from_save=restore)
+                                            tensorboard_name='nlm', restore=restore)
 
     if num_epochs > 0:
         nlm_train.train(ds, num_epochs=num_epochs)
@@ -39,11 +42,11 @@ def main(max_num_s, max_len, emb_size, rnn_size, restore, save_dir, num_epochs, 
     print('Generating sentences')
 
     nlm_predict = NeuralLanguageModelPrediction(len(ds.vocab), emb_size, rnn_size, save_dir=save_dir,
-                                                tensorboard_name='nlm', restore_from_save=True)
+                                                tensorboard_name='nlm', restore=True)
 
-    go_token = nlm_predict.predict(None, output_tensor_names=['go_token'])['go_token']
+    go_token = nlm_predict.predict(None, outputs=['go_token'])
 
-    init_hidden = nlm_predict.predict(None, output_tensor_names=['init_hidden'])['init_hidden']
+    init_hidden = nlm_predict.predict(None, outputs=['init_hidden'])
 
     prev_word_embs = np.repeat(go_token, num_samples, axis=0)
     hidden_s = np.repeat(init_hidden, num_samples, axis=0)
@@ -51,7 +54,7 @@ def main(max_num_s, max_len, emb_size, rnn_size, restore, save_dir, num_epochs, 
     sampled_sentence_words = []
     for t in range(max_len):
         result = nlm_predict.predict({'hidden': hidden_s, 'teacher_signal': prev_word_embs},
-                                     output_tensor_names=['probabilities', 'hidden'])
+                                     outputs=['probabilities', 'hidden'])
         word_probs = result['probabilities']
         hidden_s = result['hidden']
 
@@ -64,7 +67,7 @@ def main(max_num_s, max_len, emb_size, rnn_size, restore, save_dir, num_epochs, 
             np_words[ex_index] = word_index
 
         # grab embedding per word
-        np_word_embs = nlm_predict.predict({'word': np_words}, output_tensor_names=['word_emb'])['word_emb']
+        np_word_embs = nlm_predict.predict({'word': np_words}, outputs=['word_emb'])
 
         # set as next teacher signal and save word index
         prev_word_embs = np_word_embs
@@ -82,4 +85,11 @@ def main(max_num_s, max_len, emb_size, rnn_size, restore, save_dir, num_epochs, 
     for message in messages:
         print(message)
 
-    pickle.dump(messages, open(os.path.join(cic.config.DATA_DIR, 'nlm_messages.pkl'), 'wb'))
+    # Save generated responses to disk
+    pickle.dump(messages, open(result_save_dir, 'wb'))
+
+    # Save learned word embeddings to disk
+    if embs_save_dir is not None:
+        embs = nlm_predict.predict(None, outputs=['embs'])
+        np.save(embs_save_dir, embs)
+

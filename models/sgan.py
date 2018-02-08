@@ -139,16 +139,9 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         gen_op = tf.train.AdamOptimizer(gen_lr).minimize(self.o['gen_loss'], var_list=generator_variables)
         dsc_op = tf.train.AdamOptimizer(dsc_lr).minimize(self.o['dsc_loss'], var_list=discriminator_variables)
 
-        # Clip discriminator weights to be small
-        #d_clip_op = tf.group(*[d.assign(tf.clip_by_value(d, -self.inputs['c'], self.inputs['c'])) for d in discriminator_variables])
-        #g_clip_op = tf.group(*[g.assign(tf.clip_by_value(g, -0.01, 0.01)) for g in generator_variables])
-
-        #gen_op = tf.group(gen_op, g_clip_op)
-        #dsc_op = tf.group(dsc_op, d_clip_op)
-
         self.train_ops = [gen_op] + [dsc_op] * self.num_dsc_trains
 
-    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, parameter_dict, **kwargs):
+    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, params, **kwargs):
         """Optional: Define action to take place at the end of every epoch. Can use this
         for printing accuracy, saving statistics, etc. Remember, if is_training=False, we are using the model for
         prediction. Check for this. Returns true to continue training. Only return false if you wish to
@@ -159,11 +152,11 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         return True
 
     def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training,
-                         parameter_dict, **kwargs):
+                         params, **kwargs):
         """Optional: Define action to take place at the end of every batch. Can use this
         for printing accuracy, saving statistics, etc. Remember, if is_training=False, we are using the model for
         prediction. Check for this."""
-        if batch_index % 100 == 0 and is_training:
+        if batch_index % 1000 == 0 and is_training:
             print()
             print('Generator Loss: %s' % output_batch_dict['gen_loss'])
             print('Discriminator Loss: %s' % output_batch_dict['dsc_loss'])
@@ -203,7 +196,7 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
 
 
     def action_before_training(self, placeholder_dict, num_epochs, is_training, output_tensor_names,
-                               parameter_dict, batch_size=32, train_op_names=None, **kwargs):
+                               params, batch_size=32, train_op_names=None, **kwargs):
         """Optional: Define action to take place at the beginning of training/prediction, once. This could be
         used to set output_tensor_names so that certain ops always execute, as needed for other action functions."""
         if is_training:
@@ -212,7 +205,7 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
 
 
 
-def build_linear_layer(name, input_tensor, output_size):
+def build_linear_layer(name, input_tensor, output_size, xavier=False):
     """Build linear layer by creating random weight matrix and bias vector,
     and applying them to input. Weights initialized with random normal
     initializer.
@@ -224,10 +217,16 @@ def build_linear_layer(name, input_tensor, output_size):
 
     Returns: Output Tensor of linear layer with size (num_examples, out_size).
         """
-    input_size = input_tensor.get_shape()[1]  #tf.shape(input_tensor)[1]
+
+    if xavier:
+        initializer = tf.contrib.layers.xavier_initializer(uniform=False)
+    else:
+        initializer = tf.random_normal_initializer(stddev=0.01)
+
+    input_size = input_tensor.get_shape()[-1]  #tf.shape(input_tensor)[1]
     with tf.variable_scope(name):
         scale_w = tf.get_variable('w', shape=(input_size, output_size),
-                                  initializer= tf.random_normal_initializer(stddev=0.01)) # tf.contrib.layers.xavier_initializer(uniform=False)) #
+                                  initializer= initializer) # tf.contrib.layers.xavier_initializer(uniform=False)) #
 
         scale_b = tf.get_variable('b', shape=(output_size,), initializer=tf.zeros_initializer())
 

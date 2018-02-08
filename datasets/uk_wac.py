@@ -2,7 +2,7 @@
 from cic.datasets import text_dataset
 
 
-class UKWacDataset(text_dataset.StringDataset):
+class UKWacDataset(text_dataset.TextDataset):
 
     def __init__(self, ukwac_path, result_save_path=None, token_to_id=None,
                  max_length=30, regenerate=False, max_num_s=None,

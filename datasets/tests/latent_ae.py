@@ -44,8 +44,8 @@ class LatentUKWacDatasetTest(unittest2.TestCase):
                               encoder=False, decoder=True)
         latent_ukwac = LatentDataset(os.path.join(cic.config.DATA_DIR, 'test'), RNN_SIZE)
         print('Len latent_ukwac: %s' % len(latent_ukwac))
-        np_reconstructed_messages = decoder.predict(latent_ukwac, output_tensor_names=['train_prediction'],
-                                                             batch_size=20)['train_prediction']
+        np_reconstructed_messages = decoder.predict(latent_ukwac, outputs=['train_prediction'],
+                                                    batch_size=20)['train_prediction']
         print('Shape reconstructed messages: %s' % str(np_reconstructed_messages.shape))
         reconstructed_messages = self.ukwac.convert_numpy_to_strings(np_reconstructed_messages)
         print('Number of reconstructed messages: %s' % len(reconstructed_messages))

@@ -14,7 +14,7 @@ NLM_SAVE_DIR = os.path.join(DATA_DIR, 'nlm', '')
 UKWAC_PATH = '/data2/arogers/Corpora/En/UkWac/Plain-txt/ukwac_subset_100M.txt'
 UKWAC_RESULT_PATH = os.path.join(DATA_DIR, 'ukwac')
 
-GM_AE_SAVE_DIR = os.path.join(DATA_DIR, 'ukwac_autoencoder2')
+GM_AE_SAVE_DIR = os.path.join(DATA_DIR, 'gm_ae_50/')
 
 CORNELL_MOVIE_LINES_FILE = os.path.join(CORNELL_MOVIE_DIR, 'movie_lines.txt')
 CORNELL_MOVIE_CONVERSATIONS_FILE = os.path.join(CORNELL_MOVIE_DIR, 'movie_conversations.txt')

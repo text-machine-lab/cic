@@ -38,7 +38,7 @@ print('Real data shape: %s' % str(real_data.shape))
 
 # Gather fake examples
 z = GaussianRandomDataset(num_plot, code_size, 'z')
-fake_data = gan.predict(z, output_tensor_names=['code'])['code']
+fake_data = gan.predict(z, outputs=['code'])['code']
 
 print('Fake data shape: %s' % str(fake_data.shape))
 

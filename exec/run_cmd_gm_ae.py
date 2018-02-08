@@ -42,11 +42,11 @@ if __name__ == '__main__':
                               restore_from_save=RESTORE_FROM_SAVE, max_len=10)
 
     # autoencoder.train(train_cmd, output_tensor_names=['train_prediction'],
-    #                   parameter_dict={'keep prob': 0.9, 'learning rate': .0005},
+    #                   params={'keep prob': 0.9, 'learning rate': .0005},
     #                   num_epochs=100, batch_size=20, verbose=True)
 
     def calculate_train_accuracy():
-        predictions = autoencoder.predict(train_cmd, output_tensor_names=['prediction'])['prediction']
+        predictions = autoencoder.predict(train_cmd, outputs=['prediction'])['prediction']
 
         # Here, I need to convert predictions back to English and print
         reconstructed_messages = sdt.convert_numpy_array_to_strings(predictions, id_to_token,
@@ -67,7 +67,7 @@ if __name__ == '__main__':
 
     def predict_using_autoencoder_and_calculate_accuracy():
 
-        val_predictions = autoencoder.predict(val_cmd, output_tensor_names=['prediction'])['prediction']
+        val_predictions = autoencoder.predict(val_cmd, outputs=['prediction'])['prediction']
 
         val_reconstructed_messages = sdt.convert_numpy_array_to_strings(val_predictions, id_to_token,
                                                                         stop_token=cmd_dataset.stop_token,
@@ -94,7 +94,7 @@ if __name__ == '__main__':
             np_code = autoencoder.encode(np_message)
             print(np_code[:10])
             np_message_reconstruct = \
-                autoencoder.predict(np_message, output_tensor_names=['prediction'])['prediction']
+                autoencoder.predict(np_message, outputs=['prediction'])['prediction']
             message_reconstruct = cmd_dataset.convert_numpy_to_strings(np_message_reconstruct)[0]
             print('Reconstruct: %s' % message_reconstruct)
 

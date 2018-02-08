@@ -113,13 +113,13 @@ def example_advanced_mnist(use_batch_mnist_dataset=False):
     mnist_test_set = MNISTTestSet()
 
     def train():
-        train_dict = mnist_model.train(mnist_train_set, num_epochs=10, parameter_dict={'keep prob': .5})
+        train_dict = mnist_model.train(mnist_train_set, num_epochs=10, params={'keep prob': .5})
 
         print('Training accuracy: %s' % np.mean(train_dict['accuracy']))
 
     print('Execution time: %s' % timeit.timeit(train, number=1))
 
-    test_dict = mnist_model.predict(mnist_test_set, ['accuracy'], parameter_dict={'keep prob': 1.0})
+    test_dict = mnist_model.predict(mnist_test_set, ['accuracy'], params={'keep prob': 1.0})
     print('Test accuracy: %s' % np.mean(test_dict['accuracy']))
 
 if __name__ == '__main__':

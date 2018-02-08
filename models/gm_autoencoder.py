@@ -6,13 +6,19 @@ from cic.models import match_lstm
 
 
 class AutoEncoder(arcadian.gm.GenericModel):
-    def __init__(self, vocab_size, max_len=20, rnn_size=500, emb_size=200, encoder=True, decoder=True, **kwargs):
+    def __init__(self, vocab_size, max_len=20, rnn_size=500, enc_size=None, emb_size=200,
+                 encoder=True, decoder=True, **kwargs):
         self.vocab_size = vocab_size
         self.max_len = max_len
-        self.rnn_size = rnn_size
+        self.rnn_size = rnn_size  # size of decoder, also default size for encoder
         self.emb_size = emb_size
         self.encoder = encoder
         self.decoder = decoder
+
+        # If user specifies size of encoder, use it. Otherwise, by default use decoder rnn size
+        self.enc_size = enc_size
+        if enc_size is None:
+            self.enc_size = rnn_size
 
         # Define parameters for build before calling main constructor
         super().__init__(**kwargs)
@@ -20,7 +26,7 @@ class AutoEncoder(arcadian.gm.GenericModel):
     def build(self):
         self.i['message'] = tf.placeholder_with_default(tf.zeros([1, self.max_len], dtype=tf.int32),
                                                         [None, self.max_len], name='input_message')
-        self.i['code'] = tf.placeholder(dtype=tf.float32, shape=[None, self.rnn_size], name='latent_embedding')
+        self.i['code'] = tf.placeholder(dtype=tf.float32, shape=[None, self.enc_size], name='latent_embedding')
         self.i['keep prob'] = tf.placeholder_with_default(1.0, (), name='keep_prob')
         self.tf_kl_const = tf.placeholder_with_default(1.0, (), name='kl_const')
 
@@ -31,9 +37,8 @@ class AutoEncoder(arcadian.gm.GenericModel):
             self.tf_message_embs = tf.nn.embedding_lookup(self.tf_learned_embeddings, self.i['message'],
                                                           name='message_embeddings')
         if self.encoder:
-            self.o['code'], self.tf_latent_mean, self.tf_latent_log_std \
-                = self.build_encoder(self.tf_message_embs, self.i['keep prob'],
-                                     include_epsilon=False)
+            self.o['code'] = self.build_encoder(self.tf_message_embs, self.i['keep prob'],
+                                                include_epsilon=False)
         if self.decoder:
             if self.encoder:
                 decoder_input = self.o['code']
@@ -45,9 +50,7 @@ class AutoEncoder(arcadian.gm.GenericModel):
             self.o['train_prediction'] = self.o['prediction']
 
         if self.decoder and self.encoder:
-            self.tf_output_loss, self.tf_kl_loss \
-                = self.build_trainer(self.tf_message_log_prob, self.i['message'],
-                                     self.tf_latent_mean, self.tf_latent_log_std)
+            self.tf_output_loss = self.build_trainer(self.tf_message_log_prob, self.i['message'])
 
     def build_encoder(self, tf_message_embs, tf_keep_prob, include_epsilon=True):
         """Build encoder portion of autoencoder in Tensorflow."""
@@ -57,24 +60,13 @@ class AutoEncoder(arcadian.gm.GenericModel):
 
             tf_message_embs_dropout = tf.nn.dropout(tf_message_embs, tf_keep_prob)
 
-            message_lstm = tf.contrib.rnn.LSTMCell(num_units=self.rnn_size)
+            message_lstm = tf.contrib.rnn.LSTMCell(num_units=self.enc_size)
             tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs_dropout,
                                                                      dtype=tf.float32)
             tf_last_output = tf_message_outputs[:, -1, :]
             tf_last_output_dropout = tf.nn.dropout(tf_last_output, tf_keep_prob)
-            with tf.name_scope('latent_mean'):
-                tf_latent_mean, _, _ = match_lstm.create_dense_layer(tf_last_output_dropout, self.rnn_size,
-                                                                     self.rnn_size)
-            with tf.name_scope('latent_std'):
-                tf_latent_log_std, _, _ = match_lstm.create_dense_layer(tf_last_output_dropout,
-                                                                        self.rnn_size, self.rnn_size,
-                                                                        activation='relu')
-            if include_epsilon:
-                tf_epsilon = tf.random_normal(tf.shape(tf_latent_mean), stddev=1, mean=0)
-                tf_sampled_latent = tf_latent_mean + tf.exp(tf_latent_log_std) * tf_epsilon
-            else:
-                tf_sampled_latent = tf_latent_mean
-        return tf_sampled_latent, tf_latent_mean, tf_latent_log_std
+
+        return tf_last_output_dropout
 
     def build_decoder(self, tf_latent_input, tf_is_training, use_teacher_forcing=True):
         """Build decoder portion of autoencoder in Tensorflow."""
@@ -132,7 +124,7 @@ class AutoEncoder(arcadian.gm.GenericModel):
 
         return tf_message_prediction, tf_message_logits, tf_message_prob
 
-    def build_trainer(self, tf_message_log_prob, tf_message, tf_latent_mean, tf_latent_log_std):
+    def build_trainer(self, tf_message_log_prob, tf_message):
         """Calculate loss function and construct optimizer op
         for 'tf_message_log_prob' prediction and 'tf_message' label."""
         with tf.variable_scope('LOSS'):
@@ -140,26 +132,20 @@ class AutoEncoder(arcadian.gm.GenericModel):
                                                                        labels=tf_message,
                                                                        name='word_losses')
             tf_output_loss = tf.reduce_mean(tf_losses)
-            # Add KL loss
-            # if variational:
-            #     tf_kl_loss = -tf.reduce_mean(
-            #         .5 * (1 + tf_latent_log_std - tf.square(tf_latent_mean) - tf.exp(tf_latent_log_std)))
-            #     tf_kl_loss *= self.tf_kl_const
-            # else:
-            tf_kl_loss = tf.zeros(())
 
             with tf.name_scope('total_loss'):
-                tf_total_loss = tf_output_loss + tf_kl_loss
+                tf_total_loss = tf_output_loss
 
         self.loss = tf_total_loss
-        return tf_output_loss, tf_kl_loss
+
+        return tf_output_loss
 
     def encode(self, dataset):
         # Convert to dictionary if numpy input
         if isinstance(dataset, np.ndarray):
             dataset = {'message': dataset}
 
-        results = self.predict(dataset, output_tensor_names=['code'])
+        results = self.predict(dataset, outputs=['code'])
         return results['code']
 
     def decode(self, dataset):
@@ -167,11 +153,11 @@ class AutoEncoder(arcadian.gm.GenericModel):
         if isinstance(dataset, np.ndarray):
             dataset = {'code': dataset}
 
-        results = self.predict(dataset, output_tensor_names=['prediction'])
+        results = self.predict(dataset, outputs=['prediction'])
 
         return results['prediction']
 
-    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, parameter_dict, **kwargs):
+    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, params, **kwargs):
         """Print the loss for debugging purposes."""
         if is_training:
             epoch_loss = np.mean(output_tensor_dict['loss'])
@@ -180,28 +166,29 @@ class AutoEncoder(arcadian.gm.GenericModel):
         return True
 
     # def action_before_training(self, placeholder_dict, num_epochs, is_training, output_tensor_names,
-    #                            parameter_dict, batch_size=32, **kwargs):
+    #                            params, batch_size=32, **kwargs):
     #     """Optional: Define action to take place at the beginning of training/prediction, once. This could be
     #     used to set output_tensor_names so that certain ops always execute, as needed for other action functions."""
     #     if is_training:
     #         output_tensor_names.append('loss')
 
     def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training,
-                         parameter_dict, **kwargs):
+                         params, **kwargs):
         """Optional: Define action to take place at the end of every batch. Can use this
         for printing accuracy, saving statistics, etc. Remember, if is_training=False, we are using the model for
         prediction. Check for this."""
 
         # Save every 1000 batches!
-        if batch_index % 1000 == 0 and is_training:
+        if batch_index % 10000 == 0 and batch_index != 0 and is_training:
             print('Saving...')
-            if self.save_per_epoch and self.trainable and is_training:
-                self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
+            if batch_index != 0:
+                if self.save_per_epoch and self.trainable and is_training:
+                    self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
 
             print('Batch loss: %s' % np.mean(output_batch_dict['loss']))
 
             if 'validation' in kwargs:
-                val_losses = self.predict(kwargs['validation'], output_tensor_names=['loss'])['loss']
+                val_losses = self.predict(kwargs['validation'], outputs=['loss'])
                 print('Validation loss: %s' % np.mean(np.mean(val_losses)))
 
 

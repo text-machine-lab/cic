@@ -9,6 +9,7 @@ from cic.datasets.text_dataset import convert_numpy_array_to_strings
 from sacred import Experiment
 import numpy as np
 import pickle
+import tqdm
 ex = Experiment('ukwac')
 
 @ex.config
@@ -18,9 +19,10 @@ def config():
     save_dir = cic.config.GM_AE_SAVE_DIR
     print('Save directory: %s' % save_dir)
     restore = False
-    num_epochs = 3
+    num_epochs = 5
     regen_dataset = False # If problem with dataset, try this first
-    rnn_size = 600
+    dec_size = 600  # decoder LSTM cell size
+    enc_size = 30  # encoder LSTM cell size
     learning_rate = 0.0005
     num_s = 2000000  # number of sentences to train on
     train_test_split=0.99
@@ -31,20 +33,13 @@ def config():
 @ex.automain
 def main(max_s_len, save_dir,
          restore, num_epochs,
-         regen_dataset, rnn_size, learning_rate,
+         regen_dataset, dec_size, learning_rate,
          num_s, train_test_split,
          split_seed, min_s_len,
-         i_erased_vocab):
+         i_erased_vocab, enc_size):
 
     # Load UKWac dataset
     print('Loading dataset...')
-
-    #ukwac_path = '/data2/arogers/Corpora/En/UkWac/Plain-txt/ukwac_subset_100M.txt'
-    #result_path = os.path.join(cic.config.DATA_DIR, 'ukwac')
-
-    # ukwac = UKWacDataset(ukwac_path, result_save_path=result_path, max_length=max_sentence_length,
-    #                      regenerate=regenerate_dataset, max_number_of_sentences=max_number_of_sentences,
-    #                      min_length=min_sentence_length)
 
     vocab = None
     if i_erased_vocab:
@@ -56,6 +51,12 @@ def main(max_s_len, save_dir,
     tbc = TorontoBookCorpus(20, result_path=cic.config.BOOK_CORPUS_RESULT,
                             min_length=min_s_len, max_num_s=num_s, keep_unk_sentences=False,
                             vocab_min_freq=5, vocab=vocab, regenerate=regen_dataset)
+
+    # num_batches = 0
+    # for batch in tqdm.tqdm(tbc.generate_batches(32, shuffle=True)):
+    #     num_batches += 1
+    #
+    # print('Num batches in dataset: %s' % num_batches)
 
     print('Len UKWac dataset: %s' % len(tbc))
 
@@ -75,14 +76,14 @@ def main(max_s_len, save_dir,
     print('Constructing autoencoder...')
 
     autoencoder = AutoEncoder(len(tk2id), tensorboard_name='gmae', save_dir=save_dir,
-                              restore_from_save=restore, max_len=max_s_len, rnn_size=rnn_size)
+                              restore=restore, max_len=max_s_len, rnn_size=dec_size, enc_size=enc_size)
 
     # Train autoencoder
     if num_epochs > 0:
         print('Training autoencoder...')
 
-        autoencoder.train(train_tbc, output_tensor_names=['train_prediction'],
-                          parameter_dict={'keep prob': 0.9, 'learning rate': learning_rate},
+        autoencoder.train(train_tbc,
+                          params={'keep prob': 0.9, 'learning rate': learning_rate},
                           num_epochs=num_epochs, batch_size=20, verbose=True,
                           validation=val_tbc)
 
@@ -127,8 +128,7 @@ def main(max_s_len, save_dir,
     # Calculate validation accuracy
     print('Calculating validation accuracy...')
 
-    results = autoencoder.predict(val_tbc, output_tensor_names=['train_prediction'])
-    np_predictions = results['train_prediction']
+    np_predictions = autoencoder.predict(val_tbc, outputs=['train_prediction'])
 
     pred = convert_numpy_array_to_strings(np_predictions, id2tk,
                                           tbc.stop_token,

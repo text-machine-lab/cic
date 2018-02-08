@@ -1,5 +1,5 @@
 """Toronto Book Corpus implemented as a subclass of StringDataset."""
-from cic.datasets.text_dataset import StringDataset
+from cic.datasets.text_dataset import TextDataset
 import cic.config
 import os
 import h5py
@@ -8,12 +8,13 @@ from arcadian.dataset import Dataset
 
 class TorontoBookCorpus(Dataset):
     def __init__(self, max_s_len, result_path, max_num_s=None, max_part_len=100000,
-                 stop_token='<STOP>', regenerate=False, vocab=None, **kwargs):
+                 stop_token='<STOP>', regenerate=False, vocab=None, load_to_mem=True, **kwargs):
         """Book Corpus provided by Toronto University, with approx. 70 million sentences. Contains
         a single feature 'message' of numpy encoded sentences. Sentences are filtered for min and
         max lengths, and sentences containing non-alphabetical non-period characters are removed."""
 
         self.stop_token = stop_token
+        self.max_num_s = max_num_s
 
         if not os.path.exists(result_path):
             os.makedirs(result_path)
@@ -97,9 +98,9 @@ class TorontoBookCorpus(Dataset):
                 if len(strings) >= max_part_len:
                     print('Number of examples previously read: %s' % num_read_s)
 
-                    converter = StringDataset(strings, max_s_len, result_save_path=None, regenerate=True,
-                                              token_to_id=vocab, update_vocab=True, stop_token=stop_token,
-                                              nlp=nlp, **kwargs)
+                    converter = TextDataset(strings, max_s_len, result_save_path=None, regenerate=True,
+                                            token_to_id=vocab, update_vocab=True, stop_token=stop_token,
+                                            nlp=nlp, **kwargs)
 
                     # Check that previous words still have the same indices
                     if vocab is not None:
@@ -124,9 +125,9 @@ class TorontoBookCorpus(Dataset):
                     num_read_s += len(converter)
 
             # Move remaining examples
-            converter = StringDataset(strings, max_s_len, result_save_path=None, regenerate=True,
-                                      token_to_id=vocab, update_vocab=True, stop_token=stop_token,
-                                      nlp=nlp, **kwargs)
+            converter = TextDataset(strings, max_s_len, result_save_path=None, regenerate=True,
+                                    token_to_id=vocab, update_vocab=True, stop_token=stop_token,
+                                    nlp=nlp, **kwargs)
 
             # Check that previous words still have the same indices
             if vocab is not None:
@@ -146,7 +147,10 @@ class TorontoBookCorpus(Dataset):
             assert data.shape[0] == num_read_s + len(converter)
 
             # Get ready to index dataset
-            self.data = data
+            if not load_to_mem:
+                self.data = data
+            else:
+                self.data = data.value  # Retrieve numpy array from h5py array (disk to memory)
 
         else:
             print('Loading dataset from save...')
@@ -166,4 +170,7 @@ class TorontoBookCorpus(Dataset):
         return {'message': self.data[index, :]}
 
     def __len__(self):
-        return self.data.shape[0]
+        if self.max_num_s is None:
+            return self.data.shape[0]
+        else:
+            return min(self.data.shape[0], self.max_num_s)

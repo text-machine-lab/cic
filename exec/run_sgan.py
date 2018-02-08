@@ -16,14 +16,15 @@ ex = Experiment('sentence_gan')
 @ex.config
 def config():
     print('Running config')
-    code_size = 600
+    code_size = 50
+    rnn_size = 600
     regenerate_latent_ukwac = False
     max_number_of_sentences = 2000000
-    num_gen_layers = 50
-    num_dsc_layers = 50
+    num_gen_layers = 40
+    num_dsc_layers = 40
     sentence_gan_save_dir = os.path.join(cic.config.DATA_DIR, 'sentence_gan')
-    num_epochs = 100
-    restore_sentence_gan_from_save = False
+    num_epochs = 5
+    restore = True  # restore sentence GAN from checkpoint
     gen_learning_rate = 0.0001
     dsc_learning_rate = 0.0001
     max_len = 20
@@ -31,9 +32,9 @@ def config():
     num_dsc_trains = 10  # number of times to train discriminator for every train of the generator
 
 @ex.automain
-def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_generator_layers, num_discriminator_layers,
-         sentence_gan_save_dir, num_epochs, restore_sentence_gan_from_save, gen_learning_rate,
-         dsc_learning_rate, keep_prob, max_len, num_dsc_trains):
+def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_gen_layers, num_dsc_layers,
+         sentence_gan_save_dir, num_epochs, restore, gen_learning_rate,
+         dsc_learning_rate, keep_prob, max_len, num_dsc_trains, rnn_size):
     print('Running program')
 
     # If we will reconstruct latent dataset, construct ukwac dataset and encoder portion of pretrained autoencoder.
@@ -52,10 +53,10 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
     print('Length of UK Wac dataset: %s' % len(ds))
 
     if regenerate_latent_ukwac:
-        print('Regenerating latent UK Wac')
+        print('Will regenerate latent UK Wac')
         print('Constructing pre-trained autoencoder')
         encoder = AutoEncoder(len(ds.vocab), save_dir=cic.config.GM_AE_SAVE_DIR,
-                              restore_from_save=True, max_len=max_len, rnn_size=code_size,
+                              restore=True, max_len=max_len, rnn_size=code_size,
                               encoder=True, decoder=False)
 
     # Build latent ukwac dataset, either by regenerating it or loading from saved results.
@@ -72,21 +73,20 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
     # Construct SentenceGAN.
     print('Constructing Sentence GAN')
 
-    gan = SentenceGenerationGAN(code_size=code_size, num_gen_layers=num_generator_layers,
-                                num_dsc_layers=num_discriminator_layers,
+    gan = SentenceGenerationGAN(code_size=code_size, num_gen_layers=num_gen_layers,
+                                num_dsc_layers=num_dsc_layers,
                                 num_dsc_trains=num_dsc_trains,
                                 save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
-                                restore_from_save=restore_sentence_gan_from_save)
+                                restore=restore)
 
     # Train SentenceGAN.
     if num_epochs > 0:
-        gan.train(merge_dataset, parameter_dict={'gen_learning_rate': gen_learning_rate,
-                                                 'dsc_learning_rate': dsc_learning_rate,
-                                                 'keep_prob': keep_prob}, num_epochs=num_epochs)
+        gan.train(merge_dataset, params={'gen_learning_rate': gen_learning_rate,
+                                                 'dsc_learning_rate': dsc_learning_rate}, num_epochs=num_epochs)
 
     # Generate and print 100 examples!
     z_examples = GaussianRandomDataset(100, code_size, 'z')
-    generated_codes = {'code': gan.predict(z_examples, output_tensor_names=['code'])['code']}
+    generated_codes = {'code': gan.predict(z_examples, outputs=['code'])}
 
     # generated_codes = DatasetPtr(latent_ukwac, range(100))
 
@@ -96,12 +96,13 @@ def main(code_size, regenerate_latent_ukwac, max_number_of_sentences, num_genera
 
     # Create decoder to convert latent sentences back to English
     decoder = AutoEncoder(len(ds.vocab), save_dir=cic.config.GM_AE_SAVE_DIR,
-                          restore_from_save=True, max_len=max_len, rnn_size=code_size,
+                          restore=True, max_len=max_len, rnn_size=rnn_size,
+                          enc_size=code_size,
                           encoder=False, decoder=True)
 
     print('Generating sentences')
 
-    generated_np_sentences = decoder.predict(generated_codes, output_tensor_names=['train_prediction'])['train_prediction']
+    generated_np_sentences = decoder.predict(generated_codes, outputs=['train_prediction'])
 
     assert generated_np_sentences.shape == (len(generated_codes['code']), decoder.max_len)
 

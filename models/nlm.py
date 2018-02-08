@@ -105,7 +105,7 @@ class NeuralLanguageModelTraining(GenericModel):
         return self.loss
 
     def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training,
-                         parameter_dict, **kwargs):
+                         params, **kwargs):
 
         # Save every 1000 batches!
         if batch_index != 0 and batch_index % 1000 == 0 and is_training:
@@ -113,7 +113,7 @@ class NeuralLanguageModelTraining(GenericModel):
             if self.save_per_epoch and self.trainable and is_training:
                 self.saver.save(self.sess, self.save_dir, global_step=epoch_index)
 
-    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, parameter_dict, **kwargs):
+    def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, params, **kwargs):
 
         print('Loss: %s' % np.mean(output_tensor_dict['loss']))
 
@@ -182,7 +182,8 @@ class NeuralLanguageModelPrediction(GenericModel):
                              'go_token': self.tf_go_token,
                              'word_emb': self.tf_word_emb,
                              'init_hidden': self.tf_init_hidden,
-                             'hidden': tf_new_hidden_state})
+                             'hidden': tf_new_hidden_state,
+                             'embs': self.tf_learned_embeddings})
 
     def build_lstm(self, tf_teacher_signal, hidden_state):
         """Build decoder portion of autoencoder in Tensorflow."""
