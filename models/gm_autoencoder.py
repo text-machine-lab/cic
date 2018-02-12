@@ -39,6 +39,7 @@ class AutoEncoder(arcadian.gm.GenericModel):
         if self.encoder:
             self.o['code'] = self.build_encoder(self.tf_message_embs, self.i['keep prob'],
                                                 include_epsilon=False)
+
         if self.decoder:
             if self.encoder:
                 decoder_input = self.o['code']
@@ -58,10 +59,10 @@ class AutoEncoder(arcadian.gm.GenericModel):
 
             tf_message_embs = tf.reverse(tf_message_embs, axis=[1], name='reverse_message_embs')
 
-            tf_message_embs_dropout = tf.nn.dropout(tf_message_embs, tf_keep_prob)
+            # tf_message_embs_dropout = tf.nn.dropout(tf_message_embs, tf_keep_prob)
 
             message_lstm = tf.contrib.rnn.LSTMCell(num_units=self.enc_size)
-            tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs_dropout,
+            tf_message_outputs, tf_message_state = tf.nn.dynamic_rnn(message_lstm, tf_message_embs,
                                                                      dtype=tf.float32)
             tf_last_output = tf_message_outputs[:, -1, :]
             tf_last_output_dropout = tf.nn.dropout(tf_last_output, tf_keep_prob)

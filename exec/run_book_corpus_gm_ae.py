@@ -21,14 +21,16 @@ def config():
     restore = False
     num_epochs = 5
     regen_dataset = False # If problem with dataset, try this first
-    dec_size = 600  # decoder LSTM cell size
-    enc_size = 30  # encoder LSTM cell size
-    learning_rate = 0.0005
-    num_s = 2000000  # number of sentences to train on
-    train_test_split=0.99
+    dec_size = 500  # decoder LSTM cell size
+    enc_size = 50  # encoder LSTM cell size
+    learning_rate = 0.0001
+    num_s = 20000  # number of sentences to train on
+    train_test_split=0.999
     split_seed = 'seed'
+    keep_prob = 1
 
-    i_erased_vocab = False  # if accidental regen of vocab, run this
+    i_erased_vocab = False  # if you accidently regenerated the dataset, then control-C'd quickly,
+                            # but data file was destroyed, run this
 
 @ex.automain
 def main(max_s_len, save_dir,
@@ -36,7 +38,7 @@ def main(max_s_len, save_dir,
          regen_dataset, dec_size, learning_rate,
          num_s, train_test_split,
          split_seed, min_s_len,
-         i_erased_vocab, enc_size):
+         i_erased_vocab, enc_size, keep_prob):
 
     # Load UKWac dataset
     print('Loading dataset...')
@@ -62,7 +64,7 @@ def main(max_s_len, save_dir,
 
     print('Dividing dataset into train/validation split...')
 
-    train_tbc, val_tbc = tbc.split(train_test_split, seed=0.9)
+    train_tbc, val_tbc = tbc.split(train_test_split, seed=split_seed)
 
     print('Len training set: %s' % len(train_tbc))
     print('Len validation set: %s' % len(val_tbc))
@@ -83,48 +85,49 @@ def main(max_s_len, save_dir,
         print('Training autoencoder...')
 
         autoencoder.train(train_tbc,
-                          params={'keep prob': 0.9, 'learning rate': learning_rate},
+                          params={'keep prob': keep_prob, 'learning rate': learning_rate},
                           num_epochs=num_epochs, batch_size=20, verbose=True,
                           validation=val_tbc)
 
     # Calculate train accuracy
-    # print('Calculating training accuracy...')
-    #
-    # results = autoencoder.predict(train_tbc, output_tensor_names=['train_prediction'])
-    # np_predictions = results['train_prediction']
-    # #predictions = ukwac.convert_numpy_to_strings(np_predictions)
-    # predictions = convert_numpy_array_to_strings(np_predictions, id_to_token,
-    #                                           tbc.stop_token,
-    #                                           keep_stop_token=False)
-    #
-    # total_reconstructions = len(predictions)
-    # correct_reconstructions = 0
-    #
-    # print('Len predictions: %s' % len(predictions))
-    #
-    # for index in range(len(predictions)):
-    #     each_prediction = predictions[index]
-    #     each_np_prediction = np_predictions[index,:]
-    #
-    #     each_np_original = np.reshape(tbc[train_tbc.indices[index]]['message'], newshape=[1, -1])
-    #
-    #     each_original = convert_numpy_array_to_strings(each_np_original, id_to_token,
-    #                                                    tbc.stop_token,
-    #                                                    keep_stop_token=False)[0]
-    #
-    #     if index < 10:
-    #
-    #         print('Original: %s' % each_original)
-    #         print('Original numpy: %s' % str(each_np_original))
-    #         print('Reconstruction: %s' % each_prediction)
-    #         print('Reconstruction numpy: %s' % str(each_np_prediction))
-    #
-    #
-    #     if each_prediction == each_original:
-    #         correct_reconstructions += 1
-    #
-    # print('Training accuracy: %s' % (correct_reconstructions / total_reconstructions))
-    # print()
+    print('Calculating training accuracy...')
+
+    train_sample = train_tbc.split(.001, seed=split_seed)[0]
+
+    np_predictions = autoencoder.predict(train_sample, outputs=['train_prediction'])
+    #predictions = ukwac.convert_numpy_to_strings(np_predictions)
+    predictions = convert_numpy_array_to_strings(np_predictions, id2tk,
+                                              tbc.stop_token,
+                                              keep_stop_token=False)
+
+    total_reconstructions = len(predictions)
+    correct_reconstructions = 0
+
+    print('Len predictions: %s' % len(predictions))
+
+    for index in range(len(predictions)):
+        each_prediction = predictions[index]
+        each_np_prediction = np_predictions[index,:]
+
+        each_np_original = np.reshape(tbc[train_sample.indices[index]]['message'], newshape=[1, -1])
+
+        each_original = convert_numpy_array_to_strings(each_np_original, id2tk,
+                                                       tbc.stop_token,
+                                                       keep_stop_token=False)[0]
+
+        if index < 10:
+
+            print('Original: %s' % each_original)
+            print('Original numpy: %s' % str(each_np_original))
+            print('Reconstruction: %s' % each_prediction)
+            print('Reconstruction numpy: %s' % str(each_np_prediction))
+
+        if each_prediction == each_original:
+            correct_reconstructions += 1
+
+    print('Training accuracy: %s' % (correct_reconstructions / total_reconstructions))
+    print()
+
     # Calculate validation accuracy
     print('Calculating validation accuracy...')
 
@@ -133,7 +136,6 @@ def main(max_s_len, save_dir,
     pred = convert_numpy_array_to_strings(np_predictions, id2tk,
                                           tbc.stop_token,
                                           keep_stop_token=False)
-
 
     total_reconstructions = len(pred)
     correct_reconstructions = 0
