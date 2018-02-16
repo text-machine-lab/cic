@@ -3,7 +3,7 @@ accuracy."""
 import os
 
 import cic.config
-from cic.models.gm_autoencoder import AutoEncoder
+from cic.models.autoencoder import AutoEncoder
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
 from sacred import Experiment
@@ -19,15 +19,15 @@ def config():
     save_dir = cic.config.GM_AE_SAVE_DIR
     print('Save directory: %s' % save_dir)
     restore = False
-    num_epochs = 5
+    num_epochs = 1
     regen_dataset = False # If problem with dataset, try this first
-    dec_size = 500  # decoder LSTM cell size
-    enc_size = 50  # encoder LSTM cell size
+    dec_size = 600  # decoder LSTM cell size
+    enc_size = 100  # encoder LSTM cell size
     learning_rate = 0.0001
-    num_s = 20000  # number of sentences to train on
+    num_s = 2000000  # number of sentences to train on
     train_test_split=0.999
     split_seed = 'seed'
-    keep_prob = 1
+    keep_prob = .5
 
     i_erased_vocab = False  # if you accidently regenerated the dataset, then control-C'd quickly,
                             # but data file was destroyed, run this

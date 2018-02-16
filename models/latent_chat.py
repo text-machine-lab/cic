@@ -4,7 +4,7 @@ import tensorflow as tf
 from cic.utils import squad_tools as sdt
 
 from cic import config
-from cic.models import autoencoder as aef, chat_model, match_lstm
+from cic.models import old_autoencoder as aef, old_chat_model, match_lstm
 
 LEARNING_RATE = .00001
 NUM_EXAMPLES = None
@@ -100,7 +100,7 @@ class LatentChatModel:
         return tf_latent_response, tf_total_loss, train_op
 
     def predict(self, np_latent_message, batch_size):
-        latent_batch_gen = chat_model.BatchGenerator([np_latent_message], batch_size)
+        latent_batch_gen = old_chat_model.BatchGenerator([np_latent_message], batch_size)
 
         all_batch_responses = []
         for np_message_batch in latent_batch_gen.generate_batches():
@@ -127,7 +127,7 @@ class LatentChatModel:
         for epoch in range(num_epochs):
             print('Epoch: %s' % epoch)
             per_print_losses = []
-            latent_batch_gen = chat_model.BatchGenerator([np_latent_message, np_latent_response], batch_size)
+            latent_batch_gen = old_chat_model.BatchGenerator([np_latent_message, np_latent_response], batch_size)
 
             for np_message_batch, np_response_batch in latent_batch_gen.generate_batches():
                 assert np_message_batch.shape[0] != 0

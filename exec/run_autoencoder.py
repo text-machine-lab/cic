@@ -11,8 +11,8 @@ import tensorflow as tf
 from cic.utils import squad_tools as sdt, mdd_tools as mddt
 
 from cic import config
-from cic.models import autoencoder, chat_model, match_lstm
-from cic.models.autoencoder import MAX_MSG_LEN, MAX_NUM_MSGS, STOP_TOKEN, RNN_HIDDEN_DIM, \
+from cic.models import old_autoencoder, old_chat_model, match_lstm
+from cic.models.old_autoencoder import MAX_MSG_LEN, MAX_NUM_MSGS, STOP_TOKEN, RNN_HIDDEN_DIM, \
     LEARNED_EMB_DIM, LEARNING_RATE, KEEP_PROB, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
     NUM_PRINT, VALIDATE, SAVE_TENSORBOARD, SHUFFLE
 
@@ -40,7 +40,7 @@ config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR
 if options.max_messages is not None:
     MAX_NUMBER_OF_MESSAGES = int(options.max_messages)
 
-autoencoder.VARIATIONAL = options.variational
+old_autoencoder.VARIATIONAL = options.variational
 RESTORE_FROM_SAVE = options.restore_from_save
 
 print('Number of epochs: %s' % NUM_EPOCHS)
@@ -64,7 +64,7 @@ messages = mddt.load_messages_from_cornell_movie_lines(config.CORNELL_MOVIE_LINE
                                                        max_message_length=MAX_MSG_LEN,
                                                        stop_token=STOP_TOKEN)
 print('Number of Movie Dialogue messages: %s' % len(messages))
-if autoencoder.USE_REDDIT:
+if old_autoencoder.USE_REDDIT:
     all_reddit_comments = []
     for filename in os.listdir(config.REDDIT_COMMENTS_DUMP):
         reddit_comment_file = open(os.path.join(config.REDDIT_COMMENTS_DUMP, filename), 'rb')
@@ -81,8 +81,8 @@ if autoencoder.USE_REDDIT:
     # Combine Dialogue and Reddit comments
     messages += reddit_messages
 
-if autoencoder.SEED is not None:
-    random.seed(autoencoder.SEED)
+if old_autoencoder.SEED is not None:
+    random.seed(old_autoencoder.SEED)
 if SHUFFLE:
     random.shuffle(messages)
 
@@ -114,7 +114,7 @@ for i in range(10):
     print(i, vocabulary[i])
 
 print('Constructing numpy array')
-np_messages = chat_model.construct_numpy_from_messages(messages, vocab_dict, MAX_MSG_LEN)
+np_messages = old_chat_model.construct_numpy_from_messages(messages, vocab_dict, MAX_MSG_LEN)
 num_messages = np_messages.shape[0]
 print('np_messages shape: %s' % str(np_messages.shape))
 
@@ -132,13 +132,13 @@ for i in range(len(messages)):
 
 print('Building model...')
 with tf.Graph().as_default() as autoencoder_graph:
-    auto_encoder = autoencoder.AutoEncoder(LEARNED_EMB_DIM, vocabulary_length, RNN_HIDDEN_DIM,
-                                           MAX_MSG_LEN, encoder=True, decoder=True,
-                                           save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
-                                           load_from_save=RESTORE_FROM_SAVE,
-                                           learning_rate=LEARNING_RATE,
-                                           variational=autoencoder.VARIATIONAL,
-                                           use_teacher_forcing=True)
+    auto_encoder = old_autoencoder.AutoEncoder(LEARNED_EMB_DIM, vocabulary_length, RNN_HIDDEN_DIM,
+                                               MAX_MSG_LEN, encoder=True, decoder=True,
+                                               save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                               load_from_save=RESTORE_FROM_SAVE,
+                                               learning_rate=LEARNING_RATE,
+                                               variational=old_autoencoder.VARIATIONAL,
+                                               use_teacher_forcing=True)
     if SAVE_TENSORBOARD:
         match_lstm.create_tensorboard_visualization('chat')
 

@@ -9,7 +9,7 @@ import spacy
 from cic.utils import squad_tools as sdt
 
 from cic import config
-from cic.models import autoencoder as aef, latent_chat, chat_model
+from cic.models import old_autoencoder as aef, latent_chat, old_chat_model
 
 
 def parse_command_line_arguments():
@@ -52,7 +52,7 @@ def print_examples(examples):
 
 
 def pre_process_latent_chat_model_data(vocab_dict, nlp):
-    examples, np_message, np_response, _vocab_dict_, _vocabulary_ = chat_model.preprocess_all_cornell_conversations(
+    examples, np_message, np_response, _vocab_dict_, _vocabulary_ = old_chat_model.preprocess_all_cornell_conversations(
         nlp,
         vocab_dict=vocab_dict,
         reverse_inputs=False,

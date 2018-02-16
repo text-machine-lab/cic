@@ -3,7 +3,7 @@
 from cic.datasets.text_dataset import TextDataset
 
 
-class CornellMovieDialoguesDataset(TextDataset):
+class CornellMovieSentencesDataset(TextDataset):
     def __init__(self, cornell_movie_lines_file, max_s_len=30, token_to_id=None, num_examples=None, regenerate=False):
         """A flat array of strings from the Cornell Movie Dialogues dataset. Does not return message-response pairs
         as of now. Data contains one feature 'message' which is a numpy encoded string."""

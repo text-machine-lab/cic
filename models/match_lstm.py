@@ -5,7 +5,7 @@ import unittest2
 from cic.utils import squad_tools as sdt
 
 from cic import config
-from cic.models import chat_model
+from cic.models import old_chat_model
 
 LEARNING_RATE = .0001
 NUM_PARAGRAPHS = None
@@ -144,7 +144,7 @@ class LSTMBaselineModel:
             accuracies = []
             word_accuracies = []
             frac_zeros = []
-            batch_gen = chat_model.BatchGenerator([np_questions, np_contexts, np_answers, np_answer_masks], batch_size)
+            batch_gen = old_chat_model.BatchGenerator([np_questions, np_contexts, np_answers, np_answer_masks], batch_size)
             for np_question_batch, np_context_batch, np_answer_batch, np_answer_mask_batch in batch_gen.generate_batches():
                 np_batch_predictions, np_loss, _ = self.sess.run([self.tf_predictions, self.tf_total_loss, self.train_op],
                                                                 feed_dict={self.tf_question_indices: np_question_batch,

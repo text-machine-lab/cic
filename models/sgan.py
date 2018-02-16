@@ -134,7 +134,6 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         gen_lr = self.i['gen_learning_rate']
         dsc_lr = self.i['dsc_learning_rate']
 
-
         # Create optimizers for generator and discriminator.
         gen_op = tf.train.AdamOptimizer(gen_lr).minimize(self.o['gen_loss'], var_list=generator_variables)
         dsc_op = tf.train.AdamOptimizer(dsc_lr).minimize(self.o['dsc_loss'], var_list=discriminator_variables)
@@ -146,9 +145,14 @@ class SentenceGenerationGAN(arcadian.gm.GenericModel):
         for printing accuracy, saving statistics, etc. Remember, if is_training=False, we are using the model for
         prediction. Check for this. Returns true to continue training. Only return false if you wish to
         implement early-stopping."""
-        print()
-        print('######################')
-        print()
+        if is_training:
+            print('Showing per-epoch statistics')
+            #print('Generator epoch loss: %s' % np.mean(output_tensor_dict['gen_loss']))
+            print('Discriminator epoch loss: %s' % np.mean(output_tensor_dict['dsc_loss']))
+            print()
+            print('######################')
+            print()
+
         return True
 
     def action_per_batch(self, input_batch_dict, output_batch_dict, epoch_index, batch_index, is_training,

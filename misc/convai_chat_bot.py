@@ -5,7 +5,7 @@ import pickle
 import gensim
 import os
 import tensorflow as tf
-from cic.models import latent_chat, chat_model, match_lstm
+from cic.models import latent_chat, old_chat_model, match_lstm
 from cic.utils import squad_tools as sdt
 
 from cic import config
@@ -45,8 +45,8 @@ while True:
     tk_context = ' '.join([str(token) for token in context_tokenize]).lower()
     vocab_dict = gensim.corpora.Dictionary(documents=[tk_message.split(), tk_context.split()]).token2id
     np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict)
-    np_question = chat_model.construct_numpy_from_messages([tk_message.split()], vocab_dict, config.MAX_QUESTION_WORDS)
-    np_context = chat_model.construct_numpy_from_messages([tk_context.split()], vocab_dict, config.MAX_CONTEXT_WORDS)
+    np_question = old_chat_model.construct_numpy_from_messages([tk_message.split()], vocab_dict, config.MAX_QUESTION_WORDS)
+    np_context = old_chat_model.construct_numpy_from_messages([tk_context.split()], vocab_dict, config.MAX_CONTEXT_WORDS)
     np_prediction, np_probability = qa_model.predict_on_examples(np_embeddings, np_question, np_context, 1)
     answer = ' '.join(sdt.convert_numpy_array_answers_to_strings(np_prediction, [context], zero_stop_token=True))
     print('Answer: %s' % answer)

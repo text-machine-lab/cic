@@ -106,5 +106,6 @@ def build_vocabulary_from_messages(id_to_message):
             documents.append(each_message_data[-1])
     dictionary = gensim.corpora.Dictionary([['']], prune_at=None)
     dictionary.add_documents(documents, prune_at=None)
+
     vocab_dict = dictionary.token2id
     return vocab_dict
