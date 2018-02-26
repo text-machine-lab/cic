@@ -53,14 +53,15 @@ class BatchGenerator:
 
 def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=True, verbose=True,
                                          keep_duplicates=False, seed='hello world', stop_token='<STOP>',
-                                         max_message_length=MAX_MESSAGE_LENGTH, save_dir=None):
+                                         max_message_length=MAX_MESSAGE_LENGTH, save_dir=None,
+                                         max_vocab_len=None, regen=False):
     """All preprocessing of conversational data for run_old_chat_model.py. This function is also
     intended to be used by run_latent_chat.py"""
     # seed so that train and validation examples don't get blended together.
     if save_dir is not None and not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    if save_dir is None or not os.path.isfile(os.path.join(save_dir, 'cornell_convos.pkl')):
+    if regen or save_dir is None or not os.path.isfile(os.path.join(save_dir, 'cornell_convos.pkl')):
         random.seed(seed)
         if verbose:
             print('Processing conversations...')
@@ -91,7 +92,7 @@ def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=Tr
             print('Message max length: %s' % np.max(np_message_lengths))
 
         if vocab_dict is None:
-            vocab_dict = mddt.build_vocabulary_from_messages(id_to_message)
+            vocab_dict = mddt.build_vocabulary_from_messages(id_to_message, max_vocab_len=max_vocab_len)
         vocabulary = sdt.invert_dictionary(vocab_dict)
         vocabulary_length = len(vocab_dict)
         if verbose:
@@ -136,20 +137,20 @@ def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=Tr
         if verbose:
             print('Constructing input numpy arrays...')
         np_message, np_response = construct_numpy_from_examples(examples, vocab_dict, max_message_length)
-        if verbose:
-            print('Validating inputs...')
-        message_reconstruct = sdt.convert_numpy_array_to_strings(np_message, vocabulary)
-        response_reconstruct = sdt.convert_numpy_array_to_strings(np_response, vocabulary)
-        for i in range(len(examples)):
-            each_message = ' '.join(examples[i][0])
-            each_response = ' '.join(examples[i][1])
-            # print(message_reconstruct[i])
-            # print(response_reconstruct[i])
-
-            if len(examples[i][0]) <= max_message_length:
-                assert each_message == message_reconstruct[i]
-            if len(examples[i][1]) <= max_message_length:
-                assert each_response == response_reconstruct[i]
+        # if verbose:
+        #     print('Validating inputs...')
+        # message_reconstruct = sdt.convert_numpy_array_to_strings(np_message, vocabulary)
+        # response_reconstruct = sdt.convert_numpy_array_to_strings(np_response, vocabulary)
+        # for i in range(len(examples)):
+        #     each_message = ' '.join(examples[i][0])
+        #     each_response = ' '.join(examples[i][1])
+        #     # print(message_reconstruct[i])
+        #     # print(response_reconstruct[i])
+        #
+        #     if len(examples[i][0]) <= max_message_length:
+        #         assert each_message == message_reconstruct[i]
+        #     if len(examples[i][1]) <= max_message_length:
+        #         assert each_response == response_reconstruct[i]
 
         if reverse_inputs:
             if verbose:
@@ -178,14 +179,18 @@ def construct_numpy_from_examples(examples, vocab_dict, max_length):
 
 def construct_numpy_from_messages(messages, vocab_dict, max_length):
     """Construct a numpy array from messages using vocab_dict as a mapping
-    from each word to an integer index."""
+    from each word to an integer index. If out-of-vocabulary word, it
+    uses the <UNK> token!"""
     m = len(messages)
     np_messages = np.zeros([m, max_length])
     for i in range(np_messages.shape[0]):
         message = messages[i]
         for j, each_token in enumerate(message):
             if j < max_length:
-                np_messages[i, j] = vocab_dict[each_token]
+                if each_token in vocab_dict:
+                    np_messages[i, j] = vocab_dict[each_token]
+                else:
+                    np_messages[i, j] = vocab_dict['<UNK>']
     return np_messages
 
 

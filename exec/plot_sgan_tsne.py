@@ -11,20 +11,20 @@ import numpy as np
 
 num_plot = 1000
 
-code_size = 600
-num_generator_layers = 50
-num_discriminator_layers = 50
+code_size = 100
+num_gen_layers = 40
+num_dsc_layers = 40
+num_dsc_trains = 10
 sentence_gan_save_dir = os.path.join(cic.config.DATA_DIR, 'sentence_gan')
-restore_sentence_gan_from_save = False
 max_len = 20
 
 ds = LatentDataset(os.path.join(cic.config.DATA_DIR, 'latent_ukwac'), code_size,
                    data=None, autoencoder=None, regenerate=False)
 
-gan = SentenceGenerationGAN(code_size=code_size, num_gen_layers=num_generator_layers,
-                            num_dsc_layers=num_discriminator_layers,
+gan = SentenceGenerationGAN(code_size=code_size, num_gen_layers=num_gen_layers,
+                            num_dsc_layers=num_dsc_layers,
                             save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
-                            restore_from_save=True)
+                            restore=True, num_dsc_trains=num_dsc_trains)
 
 # Gather real examples
 random_indices = [int(random.random() * len(ds)) for i in range(num_plot)]
@@ -38,7 +38,7 @@ print('Real data shape: %s' % str(real_data.shape))
 
 # Gather fake examples
 z = GaussianRandomDataset(num_plot, code_size, 'z')
-fake_data = gan.predict(z, outputs=['code'])['code']
+fake_data = gan.predict(z, outputs=['code'])
 
 print('Fake data shape: %s' % str(fake_data.shape))
 

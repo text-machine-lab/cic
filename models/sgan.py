@@ -294,3 +294,36 @@ class GaussianRandomDataset(arcadian.dataset.Dataset):
 
     def __len__(self):
         return self.length
+
+class GaussianInterpolationDataset(arcadian.dataset.Dataset):
+    def __init__(self, length, num_features, feature_name, scale=1.0):
+        """This dataset picks two random Gaussian points, and constructs
+        a linear path between these points. Each example in the dataset
+        moves from the first to the second point for increasing index.
+
+        Arguments:
+            length - number of points to sample between start and end points
+            num_features - dimensionality of Gaussian points
+            feature_name - what feature name to use at interface of model
+            scale - smaller scale means points are closer
+            """
+        self.length = length
+        self.num_features = num_features
+        self.feature_name = feature_name
+        self.first_loc = np.random.randn(self.num_features)
+        self.second_loc = np.random.randn(self.num_features)
+        self.scale = scale
+
+    def __getitem__(self, index):
+
+        # p goes from the first point to the second point
+        # for increasing index.
+        # for scale less than one it never reaches second point
+        a = index / (self.length-1) * self.scale
+
+        p = self.first_loc + (self.second_loc - self.first_loc) * a
+
+        return {self.feature_name: p}
+
+    def __len__(self):
+        return self.length

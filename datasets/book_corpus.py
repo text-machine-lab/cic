@@ -8,7 +8,8 @@ from arcadian.dataset import Dataset
 
 class TorontoBookCorpus(Dataset):
     def __init__(self, max_s_len, result_path, max_num_s=None, max_part_len=100000,
-                 stop_token='<STOP>', regenerate=False, vocab=None, load_to_mem=True, **kwargs):
+                 stop_token='<STOP>', regenerate=False, vocab=None, load_to_mem=True,
+                 second_file_first=False, **kwargs):
         """Book Corpus provided by Toronto University, with approx. 70 million sentences. Contains
         a single feature 'message' of numpy encoded sentences. Sentences are filtered for min and
         max lengths, and sentences containing non-alphabetical non-period characters are removed."""
@@ -65,7 +66,13 @@ class TorontoBookCorpus(Dataset):
             nlp = None
             num_read_s = 0  # number of sentences read and converted
 
-            for line in readfiles([cic.config.BOOK_CORPUS_P1, cic.config.BOOK_CORPUS_P2]):
+            # This makes it easy to create a validation set using the second file.
+            if second_file_first:
+                files_to_read = [cic.config.BOOK_CORPUS_P2, cic.config.BOOK_CORPUS_P1]
+            else:
+                files_to_read = [cic.config.BOOK_CORPUS_P1, cic.config.BOOK_CORPUS_P2]
+
+            for line in readfiles(files_to_read):
 
                 line_tokens = line.split()
                 line = ' '.join(line_tokens)
@@ -83,7 +90,6 @@ class TorontoBookCorpus(Dataset):
                 for index in range(len(line_tokens) - 1):
                     if line_tokens[index] == line_tokens[index+1]:
                         accept = False
-
 
                 if accept:
                     strings.append(line)

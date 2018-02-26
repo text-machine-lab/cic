@@ -94,18 +94,21 @@ def load_messages_from_cornell_movie_lines_by_id(id_to_message, movie_lines_file
             pass
 
 
-def build_vocabulary_from_messages(id_to_message):
+def build_vocabulary_from_messages(id_to_message, max_vocab_len=None):
     """Given dictionary mapping from message ids to
     message strings, produce a vocabulary of all words
     and return as mapping from each word to its corresponding
     index in the vocabulary."""
+
+    print('Pruning at %s words' % max_vocab_len)
     documents = []
     for key in id_to_message:
         each_message_data = id_to_message[key]
         if each_message_data is not None:
             documents.append(each_message_data[-1])
     dictionary = gensim.corpora.Dictionary([['']], prune_at=None)
-    dictionary.add_documents(documents, prune_at=None)
+    dictionary.add_documents(documents, prune_at=max_vocab_len)
+    dictionary.add_documents([['<UNK>']], prune_at=None)
 
     vocab_dict = dictionary.token2id
     return vocab_dict

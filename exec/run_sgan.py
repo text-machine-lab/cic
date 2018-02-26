@@ -2,7 +2,7 @@
 
 from sacred import Experiment
 import os
-from cic.models.sgan import SentenceGenerationGAN, GaussianRandomDataset
+from cic.models.sgan import SentenceGenerationGAN, GaussianRandomDataset, GaussianInterpolationDataset
 from cic.datasets.latent_ae import LatentDataset
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
@@ -30,11 +30,15 @@ def config():
     max_len = 20
     keep_prob = 1.0
     num_dsc_trains = 10  # number of times to train discriminator for every train of the generator
+    num_sents_gen = 2000 # number of examples to generate for evaluation
+    save_gen_sents = True  # save generated sentences for use in external scripts
+    num_interpolates = 20  # number of interpolate sentences to generate for viewing
+    intpol_scale = .01  # measure of distance between points in interpolation
 
 @ex.automain
 def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, num_dsc_layers,
-         sentence_gan_save_dir, num_epochs, restore, gen_learning_rate,
-         dsc_learning_rate, keep_prob, max_len, num_dsc_trains, rnn_size):
+         sentence_gan_save_dir, num_epochs, restore, gen_learning_rate, num_interpolates, intpol_scale,
+         dsc_learning_rate, keep_prob, max_len, num_dsc_trains, rnn_size, num_sents_gen, save_gen_sents):
     print('Running program')
 
     # If we will reconstruct latent dataset, construct ukwac dataset and encoder portion of pretrained autoencoder.
@@ -84,13 +88,11 @@ def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, nu
         gan.train(merge_dataset, params={'gen_learning_rate': gen_learning_rate,
                                                  'dsc_learning_rate': dsc_learning_rate}, num_epochs=num_epochs)
 
-    # Generate and print 100 examples!
-    z_examples = GaussianRandomDataset(100, code_size, 'z')
+    # Generate and print examples
+    z_examples = GaussianRandomDataset(num_sents_gen, code_size, 'z')
     generated_codes = {'code': gan.predict(z_examples, outputs=['code'])}
 
     # generated_codes = DatasetPtr(latent_ukwac, range(100))
-
-    assert len(generated_codes['code']) == 100
 
     print('Constructing autoencoder')
 
@@ -115,8 +117,27 @@ def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, nu
 
     #generated_sentences = ds.convert_numpy_to_strings(generated_np_sentences)
 
-    for each_sentence in generated_sentences:
+    for index, each_sentence in enumerate(generated_sentences):
         print(each_sentence)
 
-    pickle.dump(generated_sentences, open(os.path.join(cic.config.DATA_DIR, 'gan_messages.pkl'), 'wb'))
+        if index > 50:
+            break
+
+    if save_gen_sents:
+        pickle.dump(generated_sentences, open(os.path.join(cic.config.DATA_DIR, 'gan_messages.pkl'), 'wb'))
+
+    # Linear interpolation
+    print()
+    print('Interpolating through latent space of GAN')
+    print()
+
+    z_interpolates = GaussianInterpolationDataset(num_interpolates, code_size, 'z')
+    interpolate_codes = {'code': gan.predict(z_interpolates, outputs=['code'])}
+    np_interpolate_sents = decoder.predict(interpolate_codes, outputs=['train_prediction'])
+    interpolate_sentences = convert_numpy_array_to_strings(np_interpolate_sents, reversed_vocab,
+                                            ds.stop_token,
+                                            keep_stop_token=False)
+
+    for s in interpolate_sentences:
+        print(s)
 
