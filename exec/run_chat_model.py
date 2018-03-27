@@ -4,7 +4,7 @@ from cic.datasets.cornell_movie_conversation import CornellMovieConversationData
 from cic.datasets.text_dataset import convert_numpy_array_to_strings, construct_numpy_from_messages
 from arcadian.dataset import DictionaryDataset
 from cic.models.seq_to_seq import Seq2Seq
-import cic.config
+import cic.paths
 import os
 import numpy as np
 
@@ -35,6 +35,10 @@ def generate_response_from_model(msg, ds, model, n, reverse_vocab):
     response = response.replace(' .', '.')
     response = response.replace(' ,', ',')
     response = response.replace(' !', '!')
+    response = response.replace(" '", "'")
+    response = response.replace(' ?', '?')
+    response = response.replace(' :', ':')
+    response = response.replace(" n't", "n't")
 
     return response
 
@@ -53,12 +57,12 @@ if __name__ == '__main__':
 
         split_frac = 0.99
         split_seed = 'seed'
-        num_val_print = 10  # number of validation responses to print
+        num_val_print = 0  # number of validation responses to print
         max_vocab_len = 10000
         regen = False
 
-        save_dir = os.path.join(cic.config.DATA_DIR, 'chat_model/')
-        cornell_dir = os.path.join(cic.config.DATA_DIR, 'cornell_convos/')
+        save_dir = os.path.join(cic.paths.DATA_DIR, 'chat_model/')
+        cornell_dir = os.path.join(cic.paths.DATA_DIR, 'cornell_convos/')
 
         talk_to_bot = False
 

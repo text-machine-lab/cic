@@ -5,7 +5,7 @@ import resource
 import string
 import sys
 
-from cic import config
+from cic import paths
 
 rsrc = resource.RLIMIT_DATA
 soft, hard = resource.getrlimit(rsrc)
@@ -16,7 +16,7 @@ count_answer_in_passage = 0
 total_size_of_all_records = 0
 num_examples_to_print = 1
 translator = str.maketrans('', '', string.punctuation)
-for each_line in open(config.MS_MARCO_TRAIN_SET):
+for each_line in open(paths.MS_MARCO_TRAIN_SET):
     record = json.loads(each_line)
     size_of_record = sys.getsizeof(record)
     total_size_of_all_records += size_of_record

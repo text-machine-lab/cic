@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
 from question_answering import squad_dataset_tools as sdt
 
-from cic import config
+from cic import paths
 
-paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
+paragraphs = sdt.load_squad_dataset_from_file(paths.SQUAD_TRAIN_SET)
 tk_paragraphs = sdt.tokenize_paragraphs(paragraphs)
 context_lengths = []
 for each_paragraph in tk_paragraphs:

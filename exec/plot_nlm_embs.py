@@ -2,13 +2,13 @@
 import matplotlib.pyplot
 import numpy as np
 from sklearn.manifold import TSNE
-import cic.config
+import cic.paths
 import os
 import pickle
 
 num_words = 500
-embs_path = os.path.join(cic.config.DATA_DIR, 'nlm_embs.npy')
-vocab_path = os.path.join(cic.config.BOOK_CORPUS_RESULT, 'vocab.pkl')
+embs_path = os.path.join(cic.paths.DATA_DIR, 'nlm_embs.npy')
+vocab_path = os.path.join(cic.paths.BOOK_CORPUS_RESULT, 'vocab.pkl')
 
 embs = np.load(open(embs_path, 'rb'))
 tk2id = pickle.load(open(vocab_path, 'rb'))

@@ -3,9 +3,9 @@ from sacred import Experiment
 from arcadian.dataset import MergeDataset
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
-from cic.models.sgan import GaussianRandomDataset
+from cic.models.rnet_gan import GaussianRandomDataset
 from cic.models.ext_emb_gan import ExtEmbGAN
-import cic.config
+import cic.paths
 import numpy as np
 import os
 
@@ -15,7 +15,7 @@ ex = Experiment('ext_emb_gan')
 def config():
     max_num_s = 2000000
     max_s_len = 20
-    save_dir = os.path.join(cic.config.DATA_DIR, 'ext_emb_gan')
+    save_dir = os.path.join(cic.paths.DATA_DIR, 'ext_emb_gan')
     rnn_size = 500
     num_dsc_trains = 5
     num_epochs = 5
@@ -32,9 +32,9 @@ def main(max_num_s, max_s_len, save_dir, rnn_size, num_dsc_trains, num_epochs, n
         os.makedirs(save_dir)
 
     # Load the Toronto dataset and instantiate random noise dataset
-    ds = TorontoBookCorpus(max_s_len, result_path=cic.config.BOOK_CORPUS_RESULT,
-                            min_length=5, max_num_s=max_num_s, keep_unk_sentences=False,
-                            vocab_min_freq=5, vocab=None, regenerate=False)
+    ds = TorontoBookCorpus(max_s_len, result_path=cic.paths.BOOK_CORPUS_RESULT,
+                           min_length=5, max_num_s=max_num_s, keep_unk_sentences=False,
+                           vocab_min_freq=5, vocab=None, regenerate=False)
     inverted_vocab = {ds.vocab[k]: k for k in ds.vocab}
 
     sentences = convert_numpy_array_to_strings(ds.data[:num_generate, :], inverted_vocab, stop_token=ds.stop_token,
@@ -48,7 +48,7 @@ def main(max_num_s, max_s_len, save_dir, rnn_size, num_dsc_trains, num_epochs, n
     rand_ds = GaussianRandomDataset(len(ds), rnn_size, 'z')
 
     # Load NLM embeddings
-    embs_path = os.path.join(cic.config.DATA_DIR, 'nlm_embs.npy')
+    embs_path = os.path.join(cic.paths.DATA_DIR, 'nlm_embs.npy')
     embs = np.load(open(embs_path, 'rb'))
 
     print('Mean embs: %s' % np.mean(embs))

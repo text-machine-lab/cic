@@ -1,7 +1,7 @@
 import unittest2
 from cic.datasets.cornell_movie_sentences import CornellMovieSentencesDataset
 import spacy
-import cic.config
+import cic.paths
 import numpy as np
 
 class CornellMovieSentencesTest(unittest2.TestCase):
@@ -11,7 +11,7 @@ class CornellMovieSentencesTest(unittest2.TestCase):
     def test_reconstruct(self):
         """Confirm that all strings converted into numpy form can be converted back to their original string form.
         Excludes strings that go beyond max length limit (these would get cut off)."""
-        cmd_dataset = CornellMovieSentencesDataset(cic.config.CORNELL_MOVIE_LINES_FILE)
+        cmd_dataset = CornellMovieSentencesDataset(cic.paths.CORNELL_MOVIE_LINES_FILE)
 
         token_to_id, id_to_token = cmd_dataset.get_vocabulary()
         assert len(token_to_id) == len(id_to_token)
@@ -30,7 +30,7 @@ class CornellMovieSentencesTest(unittest2.TestCase):
                 exit()
 
     def test_len(self):
-        cmd_dataset = CornellMovieSentencesDataset(cic.config.CORNELL_MOVIE_LINES_FILE, max_s_len=10)
+        cmd_dataset = CornellMovieSentencesDataset(cic.paths.CORNELL_MOVIE_LINES_FILE, max_s_len=10)
 
         for index in range(cmd_dataset.np_messages.shape[0]):
             assert cmd_dataset.np_messages[index, -1] == cmd_dataset.token_to_id[cmd_dataset.stop_token] or \

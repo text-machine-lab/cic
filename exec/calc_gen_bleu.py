@@ -1,6 +1,6 @@
 """Calculates bleu score for GAN, VAE, and NLM models."""
 import pickle
-import cic.config
+import cic.paths
 import os
 from cic.datasets.book_corpus import TorontoBookCorpus
 import numpy as np
@@ -11,11 +11,11 @@ import tqdm
 num_examples_per_model = 1000
 max_number_of_sentences = 10000
 regenerate=True
-result_path = os.path.join(cic.config.DATA_DIR, 'validation_book_corpus/')
+result_path = os.path.join(cic.paths.DATA_DIR, 'validation_book_corpus/')
 
-vae_sentences = pickle.load(open(os.path.join(cic.config.DATA_DIR, 'vae_messages.pkl'), 'rb'))[:num_examples_per_model]
-gan_sentences = pickle.load(open(os.path.join(cic.config.DATA_DIR, 'gan_messages.pkl'), 'rb'))[:num_examples_per_model]
-nlm_sentences = pickle.load(open(os.path.join(cic.config.DATA_DIR, 'nlm_messages.pkl'), 'rb'))[:num_examples_per_model]
+vae_sentences = pickle.load(open(os.path.join(cic.paths.DATA_DIR, 'vae_messages.pkl'), 'rb'))[:num_examples_per_model]
+gan_sentences = pickle.load(open(os.path.join(cic.paths.DATA_DIR, 'gan_messages.pkl'), 'rb'))[:num_examples_per_model]
+nlm_sentences = pickle.load(open(os.path.join(cic.paths.DATA_DIR, 'nlm_messages.pkl'), 'rb'))[:num_examples_per_model]
 
 # Remove stop token from VAE sentences. It gives them away!
 for index in range(len(vae_sentences)):

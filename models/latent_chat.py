@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from cic.utils import squad_tools as sdt
 
-from cic import config
+from cic import paths
 from cic.models import old_autoencoder as aef, old_chat_model, match_lstm
 
 LEARNING_RATE = .00001
@@ -17,7 +17,7 @@ CALCULATE_TRAIN_ACCURACY = True
 
 
 class LatentChatModel:
-    def __init__(self, vocab_size, learning_rate, save_dir, ae_save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR, restore_from_save=False):
+    def __init__(self, vocab_size, learning_rate, save_dir, ae_save_dir=paths.AUTO_ENCODER_MODEL_SAVE_DIR, restore_from_save=False):
         self.vocab_size = vocab_size
         self.learning_rate = learning_rate
         self.save_dir = save_dir

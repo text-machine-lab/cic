@@ -8,11 +8,11 @@ import tensorflow as tf
 from cic.models import latent_chat, old_chat_model, match_lstm
 from cic.utils import squad_tools as sdt
 
-from cic import config
+from cic import paths
 
 parser = optparse.OptionParser()
-parser.add_option('-s', '--save_dir', dest="save_dir", default=config.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
-parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
+parser.add_option('-s', '--save_dir', dest="save_dir", default=paths.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
+parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=paths.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
 
 (options, args) = parser.parse_args()
 
@@ -28,7 +28,7 @@ with tf.Graph().as_default() as latent_chat_model_graph:
 
 with tf.Graph().as_default() as qa_model_graph:
     qa_model = match_lstm.LSTMBaselineModel(match_lstm.RNN_HIDDEN_DIM, 0.0,
-                                            save_dir=config.BASELINE_MODEL_SAVE_DIR,
+                                            save_dir=paths.BASELINE_MODEL_SAVE_DIR,
                                             restore_from_save=True)
 
 context = input('Enter context: ')
@@ -45,8 +45,8 @@ while True:
     tk_context = ' '.join([str(token) for token in context_tokenize]).lower()
     vocab_dict = gensim.corpora.Dictionary(documents=[tk_message.split(), tk_context.split()]).token2id
     np_embeddings = sdt.construct_embeddings_for_vocab(vocab_dict)
-    np_question = old_chat_model.construct_numpy_from_messages([tk_message.split()], vocab_dict, config.MAX_QUESTION_WORDS)
-    np_context = old_chat_model.construct_numpy_from_messages([tk_context.split()], vocab_dict, config.MAX_CONTEXT_WORDS)
+    np_question = old_chat_model.construct_numpy_from_messages([tk_message.split()], vocab_dict, paths.MAX_QUESTION_WORDS)
+    np_context = old_chat_model.construct_numpy_from_messages([tk_context.split()], vocab_dict, paths.MAX_CONTEXT_WORDS)
     np_prediction, np_probability = qa_model.predict_on_examples(np_embeddings, np_question, np_context, 1)
     answer = ' '.join(sdt.convert_numpy_array_answers_to_strings(np_prediction, [context], zero_stop_token=True))
     print('Answer: %s' % answer)

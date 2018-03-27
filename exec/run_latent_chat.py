@@ -8,16 +8,16 @@ import os
 import spacy
 from cic.utils import squad_tools as sdt
 
-from cic import config
+from cic import paths
 from cic.models import old_autoencoder as aef, latent_chat, old_chat_model
 
 
 def parse_command_line_arguments():
     parser = optparse.OptionParser()
     parser.add_option('-t', '--train', dest="train", default=False, action='store_true', help='train model for the specified number of epochs, and save')
-    parser.add_option('-s', '--save_dir', dest="save_dir", default=config.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
+    parser.add_option('-s', '--save_dir', dest="save_dir", default=paths.LATENT_CHAT_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
     parser.add_option('-n', '--num_epochs', dest="num_epochs", default=latent_chat.NUM_EPOCHS, help='specify number of epochs to train for')
-    parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
+    parser.add_option('-a', '--ae_save_dir', dest="auto_encoder_save_dir", default=paths.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for auto-encoder model')
     parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, action='store_true', help='load model parameters from specified save directory')
     parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='talk with chat bot')
     parser.add_option('-v', '--variational', dest='variational', default=False, action='store_true', help='use variational loss')
@@ -29,15 +29,15 @@ def parse_command_line_arguments():
         latent_chat.NUM_EPOCHS = 0
     else:
         latent_chat.NUM_EPOCHS = int(options.num_epochs)
-    config.LATENT_CHAT_MODEL_SAVE_DIR = options.save_dir
+    paths.LATENT_CHAT_MODEL_SAVE_DIR = options.save_dir
     latent_chat.RESTORE_FROM_SAVE = options.restore_from_save
 
     aef.VARIATIONAL = options.variational
 
     latent_chat.PRE_PROCESS = options.preprocess
 
-    config.AUTO_ENCODER_MODEL_SAVE_DIR = options.auto_encoder_save_dir
-    config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
+    paths.AUTO_ENCODER_MODEL_SAVE_DIR = options.auto_encoder_save_dir
+    paths.AUTO_ENCODER_VOCAB_DICT = os.path.join(paths.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
 
     return options
 
@@ -121,15 +121,15 @@ def validate_latent_chat_model_data():
 options = parse_command_line_arguments()
 
 print('Number of epochs: %s' % latent_chat.NUM_EPOCHS)
-print('Model save directory: %s' % config.LATENT_CHAT_MODEL_SAVE_DIR)
+print('Model save directory: %s' % paths.LATENT_CHAT_MODEL_SAVE_DIR)
 
 print('Loading vocabulary...')
-vocab_dict = pickle.load(open(config.AUTO_ENCODER_VOCAB_DICT, 'rb'))
+vocab_dict = pickle.load(open(paths.AUTO_ENCODER_VOCAB_DICT, 'rb'))
 vocabulary = sdt.invert_dictionary(vocab_dict)
 
 lcm = latent_chat.LatentChatModel(len(vocab_dict), latent_chat.LEARNING_RATE,
-                                  config.LATENT_CHAT_MODEL_SAVE_DIR,
-                                  ae_save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                  paths.LATENT_CHAT_MODEL_SAVE_DIR,
+                                  ae_save_dir=paths.AUTO_ENCODER_MODEL_SAVE_DIR,
                                   restore_from_save=latent_chat.RESTORE_FROM_SAVE)
 
 nlp = spacy.load('en')
@@ -138,10 +138,10 @@ if latent_chat.PRE_PROCESS:
     print('Pre-processing all input data...')
     pre_processing_dump_dict = pre_process_latent_chat_model_data(vocab_dict, nlp)
     print('Saving pre-processed data')
-    pickle.dump(pre_processing_dump_dict, open(config.LATENT_CHAT_PRE_PROCESSING_DUMP, 'wb'))
+    pickle.dump(pre_processing_dump_dict, open(paths.LATENT_CHAT_PRE_PROCESSING_DUMP, 'wb'))
 else:
     print('Loading pre-processed data from save')
-    pre_processing_dump_dict = pickle.load(open(config.LATENT_CHAT_PRE_PROCESSING_DUMP, 'rb'))
+    pre_processing_dump_dict = pickle.load(open(paths.LATENT_CHAT_PRE_PROCESSING_DUMP, 'rb'))
 
 examples = pre_processing_dump_dict['examples']
 np_message = pre_processing_dump_dict['message']

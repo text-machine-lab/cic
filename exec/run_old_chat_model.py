@@ -6,7 +6,7 @@ import spacy
 import tensorflow as tf
 from cic.utils import squad_tools as sdt
 
-from cic import config
+from cic import paths
 from cic.models import old_chat_model, match_lstm
 from cic.models.old_chat_model import LEARNING_RATE, NUM_EXAMPLES_TO_PRINT, MAX_MESSAGE_LENGTH, \
     LEARNED_EMBEDDING_SIZE, \
@@ -16,8 +16,8 @@ from cic.models.old_chat_model import LEARNING_RATE, NUM_EXAMPLES_TO_PRINT, MAX_
 
 # PRE-PROCESSING #######################################################################################################
 
-if not os.path.exists(config.CHAT_MODEL_SAVE_DIR):
-    os.makedirs(config.CHAT_MODEL_SAVE_DIR)
+if not os.path.exists(paths.CHAT_MODEL_SAVE_DIR):
+    os.makedirs(paths.CHAT_MODEL_SAVE_DIR)
 
 nlp = spacy.load('en')
 
@@ -153,7 +153,7 @@ sess.run(init)
 
 if RESTORE_FROM_SAVE:
     print('Restoring from save...')
-    match_lstm.restore_model_from_save(config.CHAT_MODEL_SAVE_DIR, var_list=tf.trainable_variables(), sess=sess)
+    match_lstm.restore_model_from_save(paths.CHAT_MODEL_SAVE_DIR, var_list=tf.trainable_variables(), sess=sess)
 
 num_batches = int(num_examples * TRAIN_FRACTION / BATCH_SIZE)
 num_train_examples = num_batches * BATCH_SIZE
@@ -179,7 +179,7 @@ if num_train_examples > 0 and NUM_EPOCHS > 0:
             all_batch_losses.append(batch_loss)
             all_batch_predictions.append(batch_response_predictions)
         print('Epoch loss: %s' % np.mean(all_batch_losses))
-        saver.save(sess, config.CHAT_MODEL_SAVE_DIR, global_step=epoch)  # Save model after every epoch
+        saver.save(sess, paths.CHAT_MODEL_SAVE_DIR, global_step=epoch)  # Save model after every epoch
 
     np_train_predictions = np.concatenate(all_batch_predictions, axis=0)
 

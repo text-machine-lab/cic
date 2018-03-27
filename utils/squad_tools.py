@@ -9,7 +9,7 @@ import re
 import spacy
 import unittest2
 
-from cic import config
+from cic import paths
 
 nlp = None
 
@@ -187,7 +187,7 @@ def invert_dictionary(dictionary):
     return inv_dictionary
 
 
-def look_up_glove_embeddings(vocab_dict, glove_emb_path=config.GLOVE_200_FILE):
+def look_up_glove_embeddings(vocab_dict, glove_emb_path=paths.GLOVE_200_FILE):
     """Find a GloVe embedding for each word in
     index_to_word, if it exists. Create a dictionary
     mapping from words to GloVe vectors and return it."""
@@ -211,10 +211,10 @@ def construct_embeddings_for_vocab(vocab_dict, use_spacy_not_glove=True):
     word_to_glove = {}
     if not use_spacy_not_glove:
         word_to_glove = look_up_glove_embeddings(vocab_dict)
-        word_to_glove[''] = np.zeros([config.GLOVE_EMB_SIZE])
+        word_to_glove[''] = np.zeros([paths.GLOVE_EMB_SIZE])
         print('Word_to_glove size: %s' % len(word_to_glove))
     m = len(vocab_dict.keys())
-    np_embeddings = np.zeros([m, config.GLOVE_EMB_SIZE])
+    np_embeddings = np.zeros([m, paths.GLOVE_EMB_SIZE])
     for each_word in vocab_dict:
         index = vocab_dict[each_word]
         if use_spacy_not_glove:
@@ -223,7 +223,7 @@ def construct_embeddings_for_vocab(vocab_dict, use_spacy_not_glove=True):
             if each_word in word_to_glove.keys():
                 embedding = word_to_glove[each_word]
             else:
-                embedding = np.zeros([config.GLOVE_EMB_SIZE])
+                embedding = np.zeros([paths.GLOVE_EMB_SIZE])
         #print(embedding.vector)
         np_embeddings[index, :] = embedding
 
@@ -300,9 +300,9 @@ def generate_vocabulary_for_paragraphs(paragraphs):
 
 
 def generate_numpy_features_from_squad_examples(examples, vocab_dict,
-                                                max_question_words=config.MAX_QUESTION_WORDS,
-                                                max_answer_words=config.MAX_ANSWER_WORDS,
-                                                max_context_words=config.MAX_CONTEXT_WORDS,
+                                                max_question_words=paths.MAX_QUESTION_WORDS,
+                                                max_answer_words=paths.MAX_ANSWER_WORDS,
+                                                max_context_words=paths.MAX_CONTEXT_WORDS,
                                                 answer_indices_from_context=False,
                                                 answer_is_span=False):
     """Uses a list of squad QA examples to generate features for a QA model. Features are numpy arrays for
@@ -356,12 +356,12 @@ def generate_numpy_features_from_squad_examples(examples, vocab_dict,
                         answer_starts_here = False
                 if answer_starts_here:
                     if answer_is_span:
-                        if context_index + len(answer_tokens) - 1 < config.MAX_CONTEXT_WORDS:
+                        if context_index + len(answer_tokens) - 1 < paths.MAX_CONTEXT_WORDS:
                             np_answers[i, 0] = context_index
                             np_answers[i, 1] = context_index + len(answer_tokens) - 1
                     else:
                         for answer_index in range(len(answer_tokens)):
-                            if answer_index < config.MAX_ANSWER_WORDS and context_index + answer_index < config.MAX_CONTEXT_WORDS:
+                            if answer_index < paths.MAX_ANSWER_WORDS and context_index + answer_index < paths.MAX_CONTEXT_WORDS:
                                 np_answers[i, answer_index] = context_index + answer_index + 1  # index 0 -> ''
                     break
         else:
@@ -423,7 +423,7 @@ def compute_mask_accuracy(np_first, np_second, np_mask):
     return accuracy, element_wise_accuracy
 
 
-def compute_answer_mask(np_answers, stop_token=True, zero_weight=(1 / (config.MAX_CONTEXT_WORDS + 1))):
+def compute_answer_mask(np_answers, stop_token=True, zero_weight=(1 / (paths.MAX_CONTEXT_WORDS + 1))):
     """Returns a numpy 2D array filled with ones up to
     and including the first zero in each row of np_answers. This zero
     is interpretted as the stop token and all remaining
@@ -471,7 +471,7 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         # assert np.array_equal(np_mask, np.array([[1, 1, .005, 0], [1, .005, 0, 0], [1, 1, 1, 1], [.005, 0, 0, 0], [1, 1, 1, 1]]))
 
     def test_load_squad_dataset_from_file(self):
-        all_paragraphs = load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
+        all_paragraphs = load_squad_dataset_from_file(paths.SQUAD_TRAIN_SET)
         assert all_paragraphs is not None
         assert len(all_paragraphs) > 0
         assert isinstance(all_paragraphs[0]['context'], str)
@@ -502,9 +502,9 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         """Test empty list of examples."""
         np_questions, np_answers, np_contexts, ids, np_as \
             = generate_numpy_features_from_squad_examples([], {})
-        assert np_questions.shape == (0, config.MAX_QUESTION_WORDS)
-        assert np_answers.shape == (0, config.MAX_ANSWER_WORDS)
-        assert np_contexts.shape == (0, config.MAX_CONTEXT_WORDS)
+        assert np_questions.shape == (0, paths.MAX_QUESTION_WORDS)
+        assert np_answers.shape == (0, paths.MAX_ANSWER_WORDS)
+        assert np_contexts.shape == (0, paths.MAX_CONTEXT_WORDS)
         #print(np_ids.shape)
         assert len(ids) == 0
         assert np_as.shape == (0, 2)
@@ -524,9 +524,9 @@ class LSTM_Baseline_Test(unittest2.TestCase):
                                                           context_tokens]).token2id
         np_questions, np_answers, np_contexts, ids, np_as \
             = generate_numpy_features_from_squad_examples([example], vocab_dict)
-        assert np_questions.shape == (1, config.MAX_QUESTION_WORDS)
-        assert np_answers.shape == (1, config.MAX_ANSWER_WORDS)
-        assert np_contexts.shape == (1, config.MAX_CONTEXT_WORDS)
+        assert np_questions.shape == (1, paths.MAX_QUESTION_WORDS)
+        assert np_answers.shape == (1, paths.MAX_ANSWER_WORDS)
+        assert np_contexts.shape == (1, paths.MAX_CONTEXT_WORDS)
         assert len(ids) == 1
         assert np_as.shape == (1, 2)
         #print(np_questions)
@@ -565,9 +565,9 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         np_questions, np_answers, np_contexts, ids, np_as \
             = generate_numpy_features_from_squad_examples([example], vocab_dict,
                                                           answer_indices_from_context=True)
-        assert np_questions.shape == (1, config.MAX_QUESTION_WORDS)
-        assert np_answers.shape == (1, config.MAX_ANSWER_WORDS)
-        assert np_contexts.shape == (1, config.MAX_CONTEXT_WORDS)
+        assert np_questions.shape == (1, paths.MAX_QUESTION_WORDS)
+        assert np_answers.shape == (1, paths.MAX_ANSWER_WORDS)
+        assert np_contexts.shape == (1, paths.MAX_CONTEXT_WORDS)
         assert len(ids) == 1
         assert np_as.shape == (1, 2)
         #print(np_questions)
@@ -600,9 +600,9 @@ class LSTM_Baseline_Test(unittest2.TestCase):
         vocab_dict = vocab.token2id
         np_questions, np_answers, np_contexts, ids, np_as \
             = generate_numpy_features_from_squad_examples(qacs_tuples, vocab_dict)
-        assert np_questions.shape == (m, config.MAX_QUESTION_WORDS)
-        assert np_answers.shape == (m, config.MAX_ANSWER_WORDS)
-        assert np_contexts.shape == (m, config.MAX_CONTEXT_WORDS)
+        assert np_questions.shape == (m, paths.MAX_QUESTION_WORDS)
+        assert np_answers.shape == (m, paths.MAX_ANSWER_WORDS)
+        assert np_contexts.shape == (m, paths.MAX_CONTEXT_WORDS)
         assert len(ids) == m
         assert np_as.shape == (m, 2)
         assert np.array_equal(np_contexts[0, :], np_contexts[1, :])

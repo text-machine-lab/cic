@@ -2,10 +2,10 @@
 import json
 import pprint
 
-from cic import config
+from cic import paths
 
 index = 0
-with open(config.SQUAD_TRAIN_SET) as squad_file:
+with open(paths.SQUAD_TRAIN_SET) as squad_file:
     all = json.load(squad_file)
     data = all['data']
     print("Number of documents: %s" % len(data))

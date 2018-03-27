@@ -17,7 +17,7 @@ from cic.models.match_lstm import LEARNING_RATE, NUM_PARAGRAPHS, RNN_HIDDEN_DIM,
     PRODUCE_OUTPUT_PREDICTIONS_FILE, REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH, \
     REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS, SEED
 
-from cic import config
+from cic import paths
 
 sdt.initialize_nlp()
 
@@ -30,7 +30,7 @@ SUBMISSION_MODE = False
 if len(sys.argv) > 1:
     SUBMISSION_MODE = True
     print('Entering submission mode')
-    config.SQUAD_TRAIN_SET = sys.argv[1]
+    paths.SQUAD_TRAIN_SET = sys.argv[1]
     TRAIN_MODEL_BEFORE_PREDICTION = False
     NUM_PARAGRAPHS = None
     TRAIN_FRAC = 0
@@ -44,10 +44,10 @@ if len(sys.argv) > 1:
     PRODUCE_OUTPUT_PREDICTIONS_FILE = True
 
 if len(sys.argv) > 2:
-    config.SUBMISSION_PREDICTIONS_FILE = sys.argv[2]
+    paths.SUBMISSION_PREDICTIONS_FILE = sys.argv[2]
 
 if len(sys.argv) > 3:
-    config.BASELINE_MODEL_SAVE_DIR = sys.argv[3]
+    paths.BASELINE_MODEL_SAVE_DIR = sys.argv[3]
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -55,16 +55,16 @@ if SEED is not None:
     random.seed(SEED)
 
 if not USE_SPACY_NOT_GLOVE:
-    config.GLOVE_EMB_SIZE = 200
+    paths.GLOVE_EMB_SIZE = 200
 
-if not os.path.exists(config.BASELINE_MODEL_SAVE_DIR):
-    os.makedirs(config.BASELINE_MODEL_SAVE_DIR)
+if not os.path.exists(paths.BASELINE_MODEL_SAVE_DIR):
+    os.makedirs(paths.BASELINE_MODEL_SAVE_DIR)
 
 if TURN_OFF_TF_LOGGING:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 print('Loading SQuAD dataset')
-paragraphs = sdt.load_squad_dataset_from_file(config.SQUAD_TRAIN_SET)
+paragraphs = sdt.load_squad_dataset_from_file(paths.SQUAD_TRAIN_SET)
 #paragraphs = [paragraph for paragraph in paragraphs if len(paragraph['context'].split()) <= config.MAX_CONTEXT_WORDS]
 if NUM_PARAGRAPHS is not None:
     paragraphs = paragraphs[:NUM_PARAGRAPHS]
@@ -99,9 +99,9 @@ examples = sdt.convert_paragraphs_to_flat_format(clean_paragraphs)
 
 if REMOVE_EXAMPLES_GREATER_THAN_MAX_LENGTH:
     examples = [example for example in examples
-                if len(example[0].split()) < config.MAX_QUESTION_WORDS
-                and len(example[1].split()) < config.MAX_ANSWER_WORDS
-                and len(example[2].split()) < config.MAX_CONTEXT_WORDS]
+                if len(example[0].split()) < paths.MAX_QUESTION_WORDS
+                and len(example[1].split()) < paths.MAX_ANSWER_WORDS
+                and len(example[2].split()) < paths.MAX_CONTEXT_WORDS]
 
 dense_examples = []
 if REMOVE_EXAMPLES_WITH_MIN_FRAC_EMPTY_EMBEDDINGS != 0.0:
@@ -189,19 +189,19 @@ if VALIDATE_PROPER_INPUTS:
     assert np_question_lengths.shape[0] == np_answer_lengths.shape[0]
     assert np_answer_lengths.shape[0] == np_context_lengths.shape[0]
     assert np_context_lengths.shape[0] == np_answer_masks.shape[0]
-    assert np_contexts.shape[1] == config.MAX_CONTEXT_WORDS
-    assert np_answers.shape[1] == config.MAX_ANSWER_WORDS
-    assert np_questions.shape[1] == config.MAX_QUESTION_WORDS
+    assert np_contexts.shape[1] == paths.MAX_CONTEXT_WORDS
+    assert np_answers.shape[1] == paths.MAX_ANSWER_WORDS
+    assert np_questions.shape[1] == paths.MAX_QUESTION_WORDS
     reconstructed_contexts = sdt.convert_numpy_array_to_strings(np_contexts, vocabulary)
     reconstructed_answers = sdt.convert_numpy_array_answers_to_strings(np_answers, contexts)
     reconstructed_questions = sdt.convert_numpy_array_to_strings(np_questions, vocabulary)
     num_corrupted_answers = 0
     for i in range(num_examples):
-        assert (reconstructed_contexts[i] == contexts[i] or len(contexts[i].split()) > config.MAX_CONTEXT_WORDS)
-        assert (reconstructed_questions[i] == questions[i] or len(questions[i].split()) > config.MAX_QUESTION_WORDS)
+        assert (reconstructed_contexts[i] == contexts[i] or len(contexts[i].split()) > paths.MAX_CONTEXT_WORDS)
+        assert (reconstructed_questions[i] == questions[i] or len(questions[i].split()) > paths.MAX_QUESTION_WORDS)
         if not (reconstructed_answers[i] == answers[i]
-                or len(answers[i].split()) > config.MAX_ANSWER_WORDS
-                or len(contexts[i].split()) > config.MAX_CONTEXT_WORDS):
+                or len(answers[i].split()) > paths.MAX_ANSWER_WORDS
+                or len(contexts[i].split()) > paths.MAX_CONTEXT_WORDS):
             num_corrupted_answers += 1
             # print('Answer: %s' % answers[i])
             # print('Answer reconstruct: %s' % reconstructed_answers[i])
@@ -218,7 +218,7 @@ for i in range(np_answers.shape[0]):
         num_empty_answers += 1
 print('Fraction of empty answer vectors (should be close to zero): %s' % (num_empty_answers / num_examples))
 
-index_prob_size = config.MAX_CONTEXT_WORDS
+index_prob_size = paths.MAX_CONTEXT_WORDS
 num_answers_in_context = 0
 for each_example in examples:
     answer = each_example[1]
@@ -230,7 +230,7 @@ print('Fraction of answers found in passages: %s' % (num_answers_in_context / nu
 # GRAPH CREATION #######################################################################################################
 
 qa_model = match_lstm.LSTMBaselineModel(RNN_HIDDEN_DIM, LEARNING_RATE,
-                                        save_dir=config.BASELINE_MODEL_SAVE_DIR,
+                                        save_dir=paths.BASELINE_MODEL_SAVE_DIR,
                                         restore_from_save=RESTORE_FROM_SAVE)
 
 # Visualize
@@ -254,7 +254,7 @@ if VALIDATE_PROPER_INPUTS:
     num_sample_context_empty_embs = 0
     num_sample_context_embs = 0
     assert len(sample_examples) == np_sample_context_embs.shape[0]
-    assert config.MAX_CONTEXT_WORDS == np_sample_context_embs.shape[1]
+    assert paths.MAX_CONTEXT_WORDS == np_sample_context_embs.shape[1]
     for example_index in range(np_sample_context_embs.shape[0]):
         num_context_tokens = len(sample_examples[example_index][2].split())
         for token_index in range(np_sample_context_embs.shape[1]):
@@ -276,7 +276,7 @@ if VALIDATE_PROPER_INPUTS:
                     word_vector = sdt.nlp(word).vector
                     word_index = vocab_dict[word]
                     stored_vector = np_embeddings[word_index, :]
-                    if not np.isclose(word_vector, np.zeros([config.GLOVE_EMB_SIZE])).all():
+                    if not np.isclose(word_vector, np.zeros([paths.GLOVE_EMB_SIZE])).all():
                         assert np.isclose(np_sample_context_embs[i, j, :], word_vector).all()
                         assert np.isclose(np_sample_context_embs[i, j, :], stored_vector).all()
         fd={qa_model.tf_question_indices: np_questions[:sample_size, :], qa_model.tf_embeddings: np_embeddings}
@@ -289,7 +289,7 @@ if VALIDATE_PROPER_INPUTS:
                     word_index = vocab_dict[word]
                     stored_vector = np_embeddings[word_index, :]
                     word_vector = sdt.nlp(word).vector
-                    if not np.isclose(word_vector, np.zeros([config.GLOVE_EMB_SIZE])).all():
+                    if not np.isclose(word_vector, np.zeros([paths.GLOVE_EMB_SIZE])).all():
                         assert np.isclose(np_sample_question_embs[i, j, :], word_vector).all()
                         assert np.isclose(np_sample_question_embs[i, j, :], stored_vector).all()
     print('Inputs validated')
@@ -357,19 +357,19 @@ all_val_predictions = sdt.convert_numpy_array_answers_to_strings(np_val_predicti
                                                                  answer_is_span=False, zero_stop_token=True)
 
 if SAVE_VALIDATION_PREDICTIONS:
-    print('Saving validation predictions to: %s' % config.VALIDATION_PREDICTIONS_FILE)
+    print('Saving validation predictions to: %s' % paths.VALIDATION_PREDICTIONS_FILE)
 
-    pkl.dump([examples[val_index_start:], all_val_predictions], open(config.VALIDATION_PREDICTIONS_FILE, 'wb'))
+    pkl.dump([examples[val_index_start:], all_val_predictions], open(paths.VALIDATION_PREDICTIONS_FILE, 'wb'))
 
 if PRODUCE_OUTPUT_PREDICTIONS_FILE:
-    print('Saving submission predictions file to: %s' % config.SUBMISSION_PREDICTIONS_FILE)
+    print('Saving submission predictions file to: %s' % paths.SUBMISSION_PREDICTIONS_FILE)
     final_predictions = {}
     for i in range(num_examples):
         current_prediction = all_val_predictions[i]
         current_id = examples[i][3]
         current_answer = answers[i]
         final_predictions[current_id] = sdt.detokenize_string(current_prediction)
-    with open(config.SUBMISSION_PREDICTIONS_FILE, 'w') as json_file:
+    with open(paths.SUBMISSION_PREDICTIONS_FILE, 'w') as json_file:
         json.dump(final_predictions, json_file)
 
 if PRINT_VALIDATION_EXAMPLES:

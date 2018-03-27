@@ -2,11 +2,11 @@
 import numpy as np
 import os
 
-from cic import config
+from cic import paths
 from cic.datasets.uk_wac import UKWacDataset
 
 ukwac_path = '/data2/arogers/Corpora/En/UkWac/Plain-txt/ukwac_subset_100M.txt'
-result_path = os.path.join(config.DATA_DIR, 'ukwac')
+result_path = os.path.join(paths.DATA_DIR, 'ukwac')
 print('Loading dataset...')
 ukwac = UKWacDataset(ukwac_path, result_save_path=result_path, max_length=10, regenerate=False)
 print('Number of numpy messages in dataset: %s' % ukwac.np_messages.shape[0])

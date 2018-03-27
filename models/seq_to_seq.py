@@ -2,7 +2,7 @@
 from arcadian.gm import GenericModel
 from arcadian.dataset import DictionaryDataset
 import tensorflow as tf
-from cic.models.sgan import build_linear_layer
+from cic.models.rnet_gan import build_linear_layer
 import numpy as np
 
 class Seq2Seq(GenericModel):
@@ -20,7 +20,7 @@ class Seq2Seq(GenericModel):
 
         # initialize placeholders
         inputs = tf.placeholder(tf.int32, shape=(None, self.max_s_len), name='x')
-        labels = tf.placeholder(tf.int32, shape=(None, self.max_s_len), name='y')
+
         input_codes = tf.placeholder(tf.float32, shape=(None, self.rnn_size), name='codes')
         word = tf.placeholder(tf.int32, shape=(None,), name='input_word')
         input_state = tf.placeholder(tf.float32, shape=(None, self.rnn_size * 2), name='input_state')
@@ -29,7 +29,6 @@ class Seq2Seq(GenericModel):
         with tf.variable_scope('EMBEDDINGS'):
             embs = tf.get_variable('embs', shape=(self.vocab_len, self.emb_size))
             input_embs = tf.nn.embedding_lookup(embs, inputs)
-            label_embs = tf.nn.embedding_lookup(embs, labels)
 
         word_emb = tf.nn.embedding_lookup(embs, word)
         input_word_emb = tf.placeholder(tf.float32, shape=(None, self.emb_size), name='input_word_emb')
@@ -37,6 +36,9 @@ class Seq2Seq(GenericModel):
         with tf.variable_scope('ENCODER'):
             codes = self.encoder(input_embs)
             dropout_codes = tf.nn.dropout(codes, keep_prob)
+
+        labels = tf.placeholder(tf.int32, shape=(None, self.max_s_len), name='y')
+        label_embs = tf.nn.embedding_lookup(embs, labels)
 
         with tf.variable_scope('DECODER') as s:
             self.cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.rnn_size, state_is_tuple=False)
@@ -55,7 +57,7 @@ class Seq2Seq(GenericModel):
         self.o.update({'preds': preds, 'probs': probs, 'logits': logits, 'zero_state': zero_state,
                        'go_token': go_token, 'word_pred': pred, 'word_prob': prob,
                        'word_logit': logit, 'word_state': state, 'word_emb': word_emb,
-                       'codes': codes})
+                       'code': codes})
 
     def encoder(self, input_embs):
 
@@ -148,29 +150,31 @@ class Seq2Seq(GenericModel):
         if isinstance(msgs, np.ndarray):
             msgs = DictionaryDataset({'message': msgs})
 
+        codes = self.predict(msgs, outputs=['code'])
+
+        return self.generate_responses_from_codes(codes, n=n)
+
+
+    def generate_responses_from_codes(self, codes, n=5):
+
         go_token = self.predict(None, outputs=['go_token'])
 
         init_hidden = np.zeros([1, self.rnn_size * 2])
 
-        num_samples = len(msgs)
+        num_samples = codes.shape[0]
 
         prev_word_embs = np.repeat(go_token, num_samples, axis=0)
         hidden_s = np.repeat(init_hidden, num_samples, axis=0)
 
         # print('Shape hidden_s: %s' % str(hidden_s.shape))
 
-        codes = self.predict(msgs, outputs=['codes'])
-
         sampled_sentence_words = []
         for t in range(self.max_s_len):
-            result = self.predict([msgs, {'state': hidden_s, 'input_word_emb': prev_word_embs, 'code': codes}],
-                                   outputs=['word_prob', 'word_state'])
+            result = self.predict({'state': hidden_s, 'input_word_emb': prev_word_embs, 'code': codes},
+                                  outputs=['word_prob', 'word_state'])
 
             word_probs = result['word_prob']
             hidden_s = result['word_state']
-
-            # sample word from probability distribution
-            vocab_len = self.vocab_len
 
             np_words = np.zeros([num_samples])
             for ex_index in range(word_probs.shape[0]):  # example index

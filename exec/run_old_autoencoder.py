@@ -10,7 +10,7 @@ import spacy
 import tensorflow as tf
 from cic.utils import squad_tools as sdt, mdd_tools as mddt
 
-from cic import config
+from cic import paths
 from cic.models import old_autoencoder, old_chat_model, match_lstm
 from cic.models.old_autoencoder import MAX_MSG_LEN, MAX_NUM_MSGS, STOP_TOKEN, RNN_HIDDEN_DIM, \
     LEARNED_EMB_DIM, LEARNING_RATE, KEEP_PROB, BATCH_SIZE, TRAINING_FRACTION, NUM_EPOCHS, \
@@ -19,7 +19,7 @@ from cic.models.old_autoencoder import MAX_MSG_LEN, MAX_NUM_MSGS, STOP_TOKEN, RN
 # ARGUMENTS ############################################################################################################
 parser = optparse.OptionParser()
 parser.add_option('-t', '--train', dest="train", default=False, action='store_true', help='train model for the specified number of epochs, and save')
-parser.add_option('-s', '--save_dir', dest="save_dir", default=config.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
+parser.add_option('-s', '--save_dir', dest="save_dir", default=paths.AUTO_ENCODER_MODEL_SAVE_DIR, help='specify save directory for training and restoring')
 parser.add_option('-n', '--num_epochs', dest="num_epochs", default=NUM_EPOCHS, help='specify number of epochs to train for')
 parser.add_option('-r', '--restore_from_save', dest="restore_from_save", default=False, action='store_true', help='load model parameters from specified save directory')
 parser.add_option('-b', '--bot', dest="bot", default=False, action='store_true', help='test reconstruction of autoencoder')
@@ -34,8 +34,8 @@ if not options.train:
 else:
     NUM_EPOCHS = int(options.num_epochs)
 
-config.AUTO_ENCODER_MODEL_SAVE_DIR = options.save_dir
-config.AUTO_ENCODER_VOCAB_DICT = os.path.join(config.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
+paths.AUTO_ENCODER_MODEL_SAVE_DIR = options.save_dir
+paths.AUTO_ENCODER_VOCAB_DICT = os.path.join(paths.AUTO_ENCODER_MODEL_SAVE_DIR, 'vocab_dict.pkl')
 
 if options.max_messages is not None:
     MAX_NUMBER_OF_MESSAGES = int(options.max_messages)
@@ -44,7 +44,7 @@ old_autoencoder.VARIATIONAL = options.variational
 RESTORE_FROM_SAVE = options.restore_from_save
 
 print('Number of epochs: %s' % NUM_EPOCHS)
-print('Save directory: %s' % config.AUTO_ENCODER_MODEL_SAVE_DIR)
+print('Save directory: %s' % paths.AUTO_ENCODER_MODEL_SAVE_DIR)
 
 # PRE-PROCESSING #######################################################################################################
 
@@ -52,22 +52,22 @@ print('Save directory: %s' % config.AUTO_ENCODER_MODEL_SAVE_DIR)
 # if len(sys.argv) >= 2:
 #     config.AUTO_ENCODER_MODEL_SAVE_DIR = sys.argv[1]
 
-if not os.path.exists(config.AUTO_ENCODER_MODEL_SAVE_DIR):
-    os.makedirs(config.AUTO_ENCODER_MODEL_SAVE_DIR)
+if not os.path.exists(paths.AUTO_ENCODER_MODEL_SAVE_DIR):
+    os.makedirs(paths.AUTO_ENCODER_MODEL_SAVE_DIR)
 
 print('Loading nlp...')
 nlp = spacy.load('en')
 
 print('Loading messages...')
-messages = mddt.load_messages_from_cornell_movie_lines(config.CORNELL_MOVIE_LINES_FILE, nlp,
+messages = mddt.load_messages_from_cornell_movie_lines(paths.CORNELL_MOVIE_LINES_FILE, nlp,
                                                        max_number_of_messages=MAX_NUMBER_OF_MESSAGES,
                                                        max_message_length=MAX_MSG_LEN,
                                                        stop_token=STOP_TOKEN)
 print('Number of Movie Dialogue messages: %s' % len(messages))
 if old_autoencoder.USE_REDDIT:
     all_reddit_comments = []
-    for filename in os.listdir(config.REDDIT_COMMENTS_DUMP):
-        reddit_comment_file = open(os.path.join(config.REDDIT_COMMENTS_DUMP, filename), 'rb')
+    for filename in os.listdir(paths.REDDIT_COMMENTS_DUMP):
+        reddit_comment_file = open(os.path.join(paths.REDDIT_COMMENTS_DUMP, filename), 'rb')
         reddit_comments = pickle.load(reddit_comment_file)
         all_reddit_comments += reddit_comments
 
@@ -93,7 +93,7 @@ print('Message max length: %s' % np.max(np_message_lengths))
 
 if RESTORE_FROM_SAVE:
     print('Loading vocabulary from save')
-    vocab_dict = pickle.load(open(config.AUTO_ENCODER_VOCAB_DICT, 'rb'))
+    vocab_dict = pickle.load(open(paths.AUTO_ENCODER_VOCAB_DICT, 'rb'))
     vocabulary = sdt.invert_dictionary(vocab_dict)
 else:
     print('Building vocabulary')
@@ -106,7 +106,7 @@ else:
     vocabulary[num_non_empty_words] = vocabulary[0]
     vocabulary[0] = ''
     print('Saving vocabulary')
-    pickle.dump(vocab_dict, open(config.AUTO_ENCODER_VOCAB_DICT, 'wb'))
+    pickle.dump(vocab_dict, open(paths.AUTO_ENCODER_VOCAB_DICT, 'wb'))
 
 vocabulary_length = len(vocab_dict)
 print('Vocabulary size: %s' % vocabulary_length)
@@ -134,7 +134,7 @@ print('Building model...')
 with tf.Graph().as_default() as autoencoder_graph:
     auto_encoder = old_autoencoder.AutoEncoder(LEARNED_EMB_DIM, vocabulary_length, RNN_HIDDEN_DIM,
                                                MAX_MSG_LEN, encoder=True, decoder=True,
-                                               save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                               save_dir=paths.AUTO_ENCODER_MODEL_SAVE_DIR,
                                                load_from_save=RESTORE_FROM_SAVE,
                                                learning_rate=LEARNING_RATE,
                                                variational=old_autoencoder.VARIATIONAL,
@@ -195,7 +195,7 @@ print('Validation EM accuracy: %s' % validation_accuracy)
 with tf.Graph().as_default() as encoder_graph:
     encoder = auto_encoder.AutoEncoder(LEARNED_EMB_DIM, vocabulary_length, RNN_HIDDEN_DIM,
                                        MAX_MSG_LEN, encoder=True, decoder=False,
-                                       save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                       save_dir=paths.AUTO_ENCODER_MODEL_SAVE_DIR,
                                        load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
                                        learning_rate=LEARNING_RATE,
                                        variational=auto_encoder.VARIATIONAL)
@@ -203,7 +203,7 @@ with tf.Graph().as_default() as encoder_graph:
 with tf.Graph().as_default() as decoder_graph:
     decoder = auto_encoder.AutoEncoder(LEARNED_EMB_DIM, vocabulary_length, RNN_HIDDEN_DIM,
                                        MAX_MSG_LEN, encoder=False, decoder=True,
-                                       save_dir=config.AUTO_ENCODER_MODEL_SAVE_DIR,
+                                       save_dir=paths.AUTO_ENCODER_MODEL_SAVE_DIR,
                                        load_from_save=RESTORE_FROM_SAVE or NUM_EPOCHS > 0,
                                        learning_rate=LEARNING_RATE,
                                        variational=auto_encoder.VARIATIONAL)

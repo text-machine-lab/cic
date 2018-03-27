@@ -1,8 +1,8 @@
 """In this script, we plot sentences from the Toronto Book Corpus dataset, and sentences generated
 from our fully-trained sentence GAN. We use TSNE for dimensionality reduction."""
-import cic.config
+import cic.paths
 from cic.datasets.latent_ae import LatentDataset
-from cic.models.sgan import SentenceGenerationGAN, GaussianRandomDataset
+from cic.models.rnet_gan import ResNetGAN, GaussianRandomDataset
 import os
 from sklearn.manifold import TSNE
 import matplotlib.pyplot
@@ -15,16 +15,16 @@ code_size = 100
 num_gen_layers = 40
 num_dsc_layers = 40
 num_dsc_trains = 10
-sentence_gan_save_dir = os.path.join(cic.config.DATA_DIR, 'sentence_gan')
+sentence_gan_save_dir = os.path.join(cic.paths.DATA_DIR, 'sentence_gan')
 max_len = 20
 
-ds = LatentDataset(os.path.join(cic.config.DATA_DIR, 'latent_ukwac'), code_size,
+ds = LatentDataset(os.path.join(cic.paths.DATA_DIR, 'latent_ukwac'), code_size,
                    data=None, autoencoder=None, regenerate=False)
 
-gan = SentenceGenerationGAN(code_size=code_size, num_gen_layers=num_gen_layers,
-                            num_dsc_layers=num_dsc_layers,
-                            save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
-                            restore=True, num_dsc_trains=num_dsc_trains)
+gan = ResNetGAN(z_size=code_size, num_gen_layers=num_gen_layers,
+                num_dsc_layers=num_dsc_layers,
+                save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
+                restore=True, num_dsc_trains=num_dsc_trains)
 
 # Gather real examples
 random_indices = [int(random.random() * len(ds)) for i in range(num_plot)]

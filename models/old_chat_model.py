@@ -6,7 +6,7 @@ import pickle
 import os
 from cic.utils import squad_tools as sdt, mdd_tools as mddt
 
-from cic import config
+from cic import paths
 
 LEARNING_RATE = .0008
 NUM_CONVERSATIONS = None
@@ -65,13 +65,13 @@ def preprocess_all_cornell_conversations(nlp, vocab_dict=None, reverse_inputs=Tr
         random.seed(seed)
         if verbose:
             print('Processing conversations...')
-        conversations, id_to_message = mddt.load_cornell_movie_dialogues_dataset(config.CORNELL_MOVIE_CONVERSATIONS_FILE,
+        conversations, id_to_message = mddt.load_cornell_movie_dialogues_dataset(paths.CORNELL_MOVIE_CONVERSATIONS_FILE,
                                                                                  max_conversations_to_load=NUM_CONVERSATIONS)
         if verbose:
             print('Number of valid conversations: %s' % len(conversations))
 
             print('Finding messages...')
-        mddt.load_messages_from_cornell_movie_lines_by_id(id_to_message, config.CORNELL_MOVIE_LINES_FILE, stop_token, nlp)
+        mddt.load_messages_from_cornell_movie_lines_by_id(id_to_message, paths.CORNELL_MOVIE_LINES_FILE, stop_token, nlp)
 
         num_messages = len(id_to_message)
         if verbose:

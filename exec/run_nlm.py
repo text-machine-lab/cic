@@ -3,7 +3,7 @@
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
 from cic.models.nlm import NeuralLanguageModelTraining, NeuralLanguageModelPrediction
-import cic.config
+import cic.paths
 from sacred import Experiment
 import numpy as np
 import os
@@ -18,20 +18,20 @@ def config():
     emb_size = 200  # word embedding size
     rnn_size = 600  # lstm hidden state size
     restore = False  # restore model from saved parameters
-    save_dir = cic.config.NLM_SAVE_DIR  # where to store model parameters
+    save_dir = cic.paths.NLM_SAVE_DIR  # where to store model parameters
     num_epochs = 0
     num_samples = 2000  # number of sentences to generate after training
-    result_save_dir = os.path.join(cic.config.DATA_DIR, 'nlm_messages.pkl')  # save generated sentences to disk
-    embs_save_dir = os.path.join(cic.config.DATA_DIR, 'nlm_embs.npy')  # save learned nlm embeddings to disk after prediction
+    result_save_dir = os.path.join(cic.paths.DATA_DIR, 'nlm_messages.pkl')  # save generated sentences to disk
+    embs_save_dir = os.path.join(cic.paths.DATA_DIR, 'nlm_embs.npy')  # save learned nlm embeddings to disk after prediction
 
 
 @ex.automain
 def main(max_num_s, max_len, emb_size, rnn_size, restore, save_dir,
          num_epochs, num_samples, embs_save_dir, result_save_dir):
 
-    ds = TorontoBookCorpus(20, result_path=cic.config.BOOK_CORPUS_RESULT,
-                            min_length=5, max_num_s=max_num_s, keep_unk_sentences=False,
-                            vocab_min_freq=5, vocab=None, regenerate=False)
+    ds = TorontoBookCorpus(20, result_path=cic.paths.BOOK_CORPUS_RESULT,
+                           min_length=5, max_num_s=max_num_s, keep_unk_sentences=False,
+                           vocab_min_freq=5, vocab=None, regenerate=False)
 
     nlm_train = NeuralLanguageModelTraining(max_len, len(ds.vocab), emb_size, rnn_size, save_dir=save_dir,
                                             tensorboard_name='nlm', restore=restore)

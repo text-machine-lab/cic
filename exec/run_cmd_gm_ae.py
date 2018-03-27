@@ -6,7 +6,7 @@ import pickle
 import os
 import cic.utils.squad_tools as sdt
 
-from cic import config
+from cic import paths
 from cic.models.autoencoder import AutoEncoder
 from cic.datasets import cornell_movie_sentences as cmd
 
@@ -20,7 +20,7 @@ if __name__ == '__main__':
         saved_token_to_id = pickle.load(open(os.path.join(SAVE_DIR, 'vocabulary.pkl'), 'rb'))
 
     cmd_dataset = cmd.CornellMovieSentencesDataset(max_s_len=10, token_to_id=saved_token_to_id,
-                                                   cornell_movie_lines_file=config.CORNELL_MOVIE_LINES_FILE)
+                                                   cornell_movie_lines_file=paths.CORNELL_MOVIE_LINES_FILE)
 
     train_cmd, val_cmd = cmd_dataset.split(fraction=0.9, seed='hello world')
 

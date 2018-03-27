@@ -4,7 +4,7 @@ source is word embeddings from a fully-trained neural language model."""
 import arcadian
 import tensorflow as tf
 import numpy as np
-from cic.models.sgan import get_variables_of_scope, build_linear_layer
+from cic.models.rnet_gan import get_variables_of_scope, build_linear_layer
 
 class ExtEmbGAN(arcadian.gm.GenericModel):
     def __init__(self, embs, max_s_len, rnn_size, num_dsc_trains, **kwargs):

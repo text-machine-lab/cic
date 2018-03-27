@@ -7,20 +7,20 @@ import os
 import praw
 import re
 
-from cic import config
+from cic import paths
 
 MAX_COMMENT_LENGTH = 20
 MAX_RAW_COMMENTS = 100000
 MAX_VOCAB_SIZE = 10000
 REPEAT_CRAWL_N_TIMES = 33
 
-if not os.path.exists(config.REDDIT_COMMENTS_DUMP):
-    os.makedirs(config.REDDIT_COMMENTS_DUMP)
+if not os.path.exists(paths.REDDIT_COMMENTS_DUMP):
+    os.makedirs(paths.REDDIT_COMMENTS_DUMP)
 
 client_id = None
 secret = None
 agent = None
-with open(config.REDDIT_CRAWLER_CREDENTIALS, 'r') as f:
+with open(paths.REDDIT_CRAWLER_CREDENTIALS, 'r') as f:
     for line in f:
         line_tokens = line.split()
         if line_tokens[0] == 'client_id':
@@ -84,7 +84,7 @@ for j in range(REPEAT_CRAWL_N_TIMES):
     print('Number of pruned comments: %s' % len(pruned_comments))
 
     moment = time.strftime("%Y-%b-%d__%H_%M_%S", time.localtime())
-    new_filename = os.path.join(config.REDDIT_COMMENTS_DUMP, 'reddit_comments' + moment + '.pkl')
+    new_filename = os.path.join(paths.REDDIT_COMMENTS_DUMP, 'reddit_comments' + moment + '.pkl')
     f = open(new_filename, 'wb')
 
     print('\nSaving...')

@@ -2,7 +2,7 @@
 accuracy."""
 import os
 
-import cic.config
+import cic.paths
 from cic.models.autoencoder import AutoEncoder
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
@@ -16,13 +16,13 @@ ex = Experiment('ukwac')
 def config():
     max_s_len = 20  # maximum length of sentences to train on, including stop token
     min_s_len = 5
-    save_dir = cic.config.GM_AE_SAVE_DIR
+    save_dir = cic.paths.GM_AE_SAVE_DIR
     print('Save directory: %s' % save_dir)
     restore = False
     num_epochs = 1
     regen_dataset = False # If problem with dataset, try this first
     dec_size = 600  # decoder LSTM cell size
-    enc_size = 100  # encoder LSTM cell size
+    enc_size = 400  # encoder LSTM cell size
     learning_rate = 0.0001
     num_s = 2000000  # number of sentences to train on
     train_test_split=0.999
@@ -46,11 +46,11 @@ def main(max_s_len, save_dir,
     vocab = None
     if i_erased_vocab:
         print('Loading vocabulary from save...')
-        vocab_path = os.path.join(cic.config.BOOK_CORPUS_RESULT, 'vocab.pkl')
+        vocab_path = os.path.join(cic.paths.BOOK_CORPUS_RESULT, 'vocab.pkl')
         with open(vocab_path, 'rb') as vocab_file:
             vocab = pickle.load(vocab_file)
 
-    tbc = TorontoBookCorpus(20, result_path=cic.config.BOOK_CORPUS_RESULT,
+    tbc = TorontoBookCorpus(20, result_path=cic.paths.BOOK_CORPUS_RESULT,
                             min_length=min_s_len, max_num_s=num_s, keep_unk_sentences=False,
                             vocab_min_freq=5, vocab=vocab, regenerate=regen_dataset)
 

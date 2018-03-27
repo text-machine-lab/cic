@@ -3,15 +3,15 @@ the new chat bot seq-to-seq model."""
 from cic.datasets.cornell_movie_conversation import CornellMovieConversationDataset
 from cic.models.seq_to_seq import Seq2Seq
 from cic.exec.run_chat_model import generate_response_from_model
-import cic.config
+import cic.paths
 import os
 
 max_s_len = 10
 emb_size = 200
 rnn_size = 200
-n = 10
-save_dir = os.path.join(cic.config.DATA_DIR, 'chat_model/')
-cornell_dir = os.path.join(cic.config.DATA_DIR, 'cornell_convos/')
+n = 5
+save_dir = os.path.join(cic.paths.DATA_DIR, 'chat_model/')
+cornell_dir = os.path.join(cic.paths.DATA_DIR, 'cornell_convos/')
 max_vocab_len = 10000
 
 ds = CornellMovieConversationDataset(max_s_len, reverse_inputs=False, seed='seed',

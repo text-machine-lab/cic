@@ -2,7 +2,7 @@
 Volunteers edit this file to perform evaluation."""
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
-import cic.config
+import cic.paths
 import os
 import pickle
 import random
@@ -11,9 +11,9 @@ import numpy as np
 num_examples_per_model = 333
 max_number_of_sentences = 2000000
 
-vae_sentences = pickle.load(open(os.path.join(cic.config.DATA_DIR, 'vae_messages.pkl'), 'rb'))
-gan_sentences = pickle.load(open(os.path.join(cic.config.DATA_DIR, 'gan_messages.pkl'), 'rb'))
-nlm_sentences = pickle.load(open(os.path.join(cic.config.DATA_DIR, 'nlm_messages.pkl'), 'rb'))
+vae_sentences = pickle.load(open(os.path.join(cic.paths.DATA_DIR, 'vae_messages.pkl'), 'rb'))
+gan_sentences = pickle.load(open(os.path.join(cic.paths.DATA_DIR, 'gan_messages.pkl'), 'rb'))
+nlm_sentences = pickle.load(open(os.path.join(cic.paths.DATA_DIR, 'nlm_messages.pkl'), 'rb'))
 
 for index in range(len(vae_sentences)):
     vae_sentences[index] = ' '.join(vae_sentences[index].replace('<STOP>', '').split())
@@ -21,7 +21,7 @@ for index in range(len(vae_sentences)):
     if index < 10:
         print(vae_sentences[index])
 
-ds = TorontoBookCorpus(20, result_path=cic.config.BOOK_CORPUS_RESULT,
+ds = TorontoBookCorpus(20, result_path=cic.paths.BOOK_CORPUS_RESULT,
                        min_length=5, max_num_s=max_number_of_sentences, keep_unk_sentences=False,
                        vocab_min_freq=5, vocab=None, regenerate=False)
 
@@ -99,7 +99,7 @@ print('Len rand_real_sents: %s' % len(rand_real_sents))
 assert len(rand_gen_sents) == len(rand_labels)
 assert len(rand_labels) == len(rand_real_sents)
 
-f = open(os.path.join(cic.config.DATA_DIR, 'evaluation.txt'), 'w')
+f = open(os.path.join(cic.paths.DATA_DIR, 'evaluation.txt'), 'w')
 
 
 record_gen_first = []  # this tracks, per line, if the generated example came first
@@ -116,7 +116,7 @@ for i in range(len(rand_gen_sents)):
         output_pairs.append([rand_real_sents[i], rand_gen_sents[i]])
 
 answers = [(rand_label, gen_first) for rand_label, gen_first in zip(rand_labels, record_gen_first)]
-pickle.dump(answers, open(os.path.join(cic.config.DATA_DIR, 'evaluation_answers.pkl'), 'wb'))
+pickle.dump(answers, open(os.path.join(cic.paths.DATA_DIR, 'evaluation_answers.pkl'), 'wb'))
 
 # Check to make sure evaluation details work correctly...
 

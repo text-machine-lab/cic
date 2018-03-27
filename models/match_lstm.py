@@ -4,7 +4,7 @@ import tensorflow as tf
 import unittest2
 from cic.utils import squad_tools as sdt
 
-from cic import config
+from cic import paths
 from cic.models import old_chat_model
 
 LEARNING_RATE = .0001
@@ -65,16 +65,16 @@ class LSTMBaselineModel:
 
     def build(self, rnn_size):
         #tf_embeddings = tf.Variable(np_embeddings, name='word_embeddings', dtype=tf.float32, trainable=False)
-        tf_embeddings = tf.placeholder(dtype=tf.float32, shape=(None, config.GLOVE_EMB_SIZE), name='word_embeddings')
+        tf_embeddings = tf.placeholder(dtype=tf.float32, shape=(None, paths.GLOVE_EMB_SIZE), name='word_embeddings')
         print('Constructing placeholders')
         with tf.name_scope('PLACEHOLDERS'):
-            tf_question_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_QUESTION_WORDS),
+            tf_question_indices = tf.placeholder(dtype=tf.int32, shape=(None, paths.MAX_QUESTION_WORDS),
                                                  name='question_indices')
-            tf_context_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_CONTEXT_WORDS),
+            tf_context_indices = tf.placeholder(dtype=tf.int32, shape=(None, paths.MAX_CONTEXT_WORDS),
                                                 name='context_indices')
-            tf_answer_indices = tf.placeholder(dtype=tf.int32, shape=(None, config.MAX_ANSWER_WORDS),
+            tf_answer_indices = tf.placeholder(dtype=tf.int32, shape=(None, paths.MAX_ANSWER_WORDS),
                                                name='answer_indices')
-            tf_answer_masks = tf.placeholder(dtype=tf.float32, shape=(None, config.MAX_ANSWER_WORDS),
+            tf_answer_masks = tf.placeholder(dtype=tf.float32, shape=(None, paths.MAX_ANSWER_WORDS),
                                              name='answer_masks')
             tf_batch_size = tf.placeholder(dtype=tf.int32, shape=(), name='batch_size')
             tf_keep_prob = tf.placeholder_with_default(1.0, shape=(), name='keep_prob')
@@ -117,7 +117,7 @@ class LSTMBaselineModel:
         # Calculate loss per each
         with tf.name_scope('LOSS'):
             time_step_losses = []
-            for time_step in range(config.MAX_ANSWER_WORDS):
+            for time_step in range(paths.MAX_ANSWER_WORDS):
                 time_step_losses.append(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf_log_probabilities[:, time_step, :],
                                                                    labels=tf_answer_indices[:, time_step]))
@@ -158,7 +158,7 @@ class LSTMBaselineModel:
                                                                     np_batch_predictions,
                                                                     np_answer_mask_batch)
                 frac_zero = sdt.compute_multi_label_accuracy(np_batch_predictions,
-                                                             np.zeros([batch_size, config.MAX_ANSWER_WORDS]))
+                                                             np.zeros([batch_size, paths.MAX_ANSWER_WORDS]))
                 accuracies.append(accuracy)
                 word_accuracies.append(word_accuracy)
                 frac_zeros.append(frac_zero)
@@ -174,7 +174,7 @@ class LSTMBaselineModel:
             print('Epoch TRAIN Word Accuracy: %s' % epoch_word_accuracy)
             print('Epoch fraction of zero vector answers: %s' % epoch_frac_zero)
             print('Saving model %s' % epoch)
-            self.saver.save(self.sess, config.BASELINE_MODEL_SAVE_DIR, global_step=epoch)
+            self.saver.save(self.sess, paths.BASELINE_MODEL_SAVE_DIR, global_step=epoch)
 
         np_train_predictions = np.concatenate(all_train_predictions, axis=0)
 
@@ -300,17 +300,17 @@ def match_gru(tf_question_outputs, tf_passage_outputs, batch_size, hidden_size):
     tf_attention_weight = tf.get_variable('match_w', shape=[hidden_size, 1], initializer=tf.contrib.layers.xavier_initializer())
     tf_attention_bias = tf.get_variable('match_b', shape=[1, 1], initializer=tf.contrib.layers.xavier_initializer())
     Hr_states = []
-    for i in range(config.MAX_CONTEXT_WORDS):  # Could have a problem here...
+    for i in range(paths.MAX_CONTEXT_WORDS):  # Could have a problem here...
         with tf.name_scope('MATCH_TIMESTEP'):
             hiP = tf_passage_outputs[:, i, :]
             Hq_reshape = tf.reshape(tf_question_outputs, [-1, hidden_size], name='question_reshape')
             Wq_Hq_matmul = tf.matmul(Hq_reshape, tf_question_weight, name='q_o_W_q_not_reshaped')
-            Wq_Hq_matmul_reshape = tf.reshape(Wq_Hq_matmul, [batch_size, config.MAX_QUESTION_WORDS, hidden_size], name='q_o_W_q')
+            Wq_Hq_matmul_reshape = tf.reshape(Wq_Hq_matmul, [batch_size, paths.MAX_QUESTION_WORDS, hidden_size], name='q_o_W_q')
             Wp_hiP_matmul = tf.matmul(hiP, tf_passage_weight, name='context_att_emb')
             Wr_hr = tf.matmul(tf_lstm_output, tf_hidden_weight, name='hidden_att_emb')
             WphiP_Wrhr_bp_add = tf.reshape(Wp_hiP_matmul + Wr_hr + tf_passage_bias, [batch_size, 1, hidden_size], name='qcr_transform_reshaped')
             G_i = tf.tanh(Wq_Hq_matmul_reshape + WphiP_Wrhr_bp_add, name='G_i')
-            a_i = tf.reshape(tf.matmul(tf.reshape(G_i, [-1, hidden_size]), tf_attention_weight) + tf_attention_bias, [batch_size, config.MAX_QUESTION_WORDS, 1], name='a_i')
+            a_i = tf.reshape(tf.matmul(tf.reshape(G_i, [-1, hidden_size]), tf_attention_weight) + tf_attention_bias, [batch_size, paths.MAX_QUESTION_WORDS, 1], name='a_i')
             H_q_a_i = tf.reshape(tf.matmul(tf_question_outputs, tf.nn.softmax(a_i), transpose_a=True), [-1, hidden_size], name='H_q_a_i')
             tf_match_input = tf.concat([hiP, H_q_a_i], axis=1, name='match_input')
             with tf.variable_scope('MATCH_ENCODER') as scope:
@@ -340,9 +340,9 @@ def pointer_net(Hr_tilda, batch_size, hidden_size):
         all_hidden_states = []
 
         num_time_steps = Hr_tilda.shape[1].value
-        assert num_time_steps == config.MAX_CONTEXT_WORDS + 1
+        assert num_time_steps == paths.MAX_CONTEXT_WORDS + 1
 
-        for i in range(config.MAX_ANSWER_WORDS):
+        for i in range(paths.MAX_ANSWER_WORDS):
             all_hidden_states.append(tf_hidden_state)
             with tf.name_scope('ANSWER_TIMESTEP'):
                 Hr_tilda_V_matmul = tf.reshape(tf.matmul(tf.reshape(Hr_tilda, [-1, hidden_size * 2]), V),

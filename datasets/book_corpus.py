@@ -1,6 +1,6 @@
 """Toronto Book Corpus implemented as a subclass of StringDataset."""
 from cic.datasets.text_dataset import TextDataset
-import cic.config
+import cic.paths
 import os
 import h5py
 import pickle
@@ -42,8 +42,8 @@ class TorontoBookCorpus(Dataset):
                         pass
                 return i + 1
 
-            p1_num_lines = file_len(cic.config.BOOK_CORPUS_P1)
-            p2_num_lines = file_len(cic.config.BOOK_CORPUS_P2)
+            p1_num_lines = file_len(cic.paths.BOOK_CORPUS_P1)
+            p2_num_lines = file_len(cic.paths.BOOK_CORPUS_P2)
             num_lines = p1_num_lines + p2_num_lines
 
             if max_s_len is not None:
@@ -68,9 +68,9 @@ class TorontoBookCorpus(Dataset):
 
             # This makes it easy to create a validation set using the second file.
             if second_file_first:
-                files_to_read = [cic.config.BOOK_CORPUS_P2, cic.config.BOOK_CORPUS_P1]
+                files_to_read = [cic.paths.BOOK_CORPUS_P2, cic.paths.BOOK_CORPUS_P1]
             else:
-                files_to_read = [cic.config.BOOK_CORPUS_P1, cic.config.BOOK_CORPUS_P2]
+                files_to_read = [cic.paths.BOOK_CORPUS_P1, cic.paths.BOOK_CORPUS_P2]
 
             for line in readfiles(files_to_read):
 
