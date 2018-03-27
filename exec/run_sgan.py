@@ -81,7 +81,7 @@ def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, nu
                     num_dsc_layers=num_dsc_layers,
                     num_dsc_trains=num_dsc_trains,
                     save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
-                    restore=restore)
+                    restore=restore, out_size=code_size)
 
     # Train SentenceGAN.
     if num_epochs > 0:
