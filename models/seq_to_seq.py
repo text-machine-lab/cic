@@ -136,7 +136,7 @@ class Seq2Seq(GenericModel):
 
         return self.loss
 
-    def generate_responses(self, msgs, n=5):
+    def generate_responses(self, msgs, n=1):
         """For a batch of input (messages), generate for each
         input an output (response).
 

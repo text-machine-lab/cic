@@ -85,6 +85,7 @@ class ResNetGAN(arcadian.gm.GenericModel):
 
         self.load_scopes = ['GENERATOR', 'DISCRIMINATOR']
 
+
         if self.context_size != 0:
             self.i.update({'context': self.context})
 
@@ -101,7 +102,7 @@ class ResNetGAN(arcadian.gm.GenericModel):
         """Create latent space input"""
 
         # True label input to discriminator.
-        self.data = T.placeholder(T.float32, shape=(None, self.out_size), name='code')
+        self.data = T.placeholder(T.float32, shape=(None, self.out_size), name='data')
 
         # Only include context vector if size is not zero
         if self.context_size != 0:
@@ -175,7 +176,9 @@ class ResNetGAN(arcadian.gm.GenericModel):
         dsc_fake_loss = T.reduce_mean(self.fake_scores)
 
         dsc_loss = dsc_fake_loss + dsc_real_loss + norm_loss
-        gen_loss = -dsc_fake_loss
+
+        # gen_loss = -dsc_fake_loss
+        gen_loss = T.nn.l2_loss(real_data - fake_data)
 
         # Create optimizers for generator and discriminator.
         gen_op = T.train.AdamOptimizer(self.gen_lr).minimize(gen_loss, var_list=generator_variables)

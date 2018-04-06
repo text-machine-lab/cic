@@ -68,7 +68,7 @@ def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, nu
     latent_ukwac = LatentDataset(os.path.join(cic.paths.DATA_DIR, 'latent_ukwac'), code_size,
                                  data=ds, autoencoder=encoder, regenerate=regen_latent_ae, feature_name='data')
 
-    z_dataset = GaussianRandomDataset(len(latent_ukwac), code_size, 'inputs')
+    z_dataset = GaussianRandomDataset(len(latent_ukwac), code_size, 'z')
 
     merge_dataset = MergeDataset([latent_ukwac, z_dataset])
 
@@ -89,7 +89,7 @@ def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, nu
                                          'dsc_lr': dsc_learning_rate}, num_epochs=num_epochs)
 
     # Generate and print examples
-    z_examples = GaussianRandomDataset(num_sents_gen, code_size, 'inputs')
+    z_examples = GaussianRandomDataset(num_sents_gen, code_size, 'z')
     generated_codes = {'code': gan.predict(z_examples, outputs=['outputs'])}
 
     # generated_codes = DatasetPtr(latent_ukwac, range(100))
@@ -131,7 +131,7 @@ def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, nu
     print('Interpolating through latent space of GAN')
     print()
 
-    z_interpolates = GaussianInterpolationDataset(num_interpolates, code_size, 'inputs')
+    z_interpolates = GaussianInterpolationDataset(num_interpolates, code_size, 'z')
     interpolate_codes = {'code': gan.predict(z_interpolates, outputs=['outputs'])}
     np_interpolate_sents = decoder.predict(interpolate_codes, outputs=['train_prediction'])
     interpolate_sentences = convert_numpy_array_to_strings(np_interpolate_sents, reversed_vocab,
