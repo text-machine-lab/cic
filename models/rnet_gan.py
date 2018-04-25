@@ -177,8 +177,8 @@ class ResNetGAN(arcadian.gm.GenericModel):
 
         dsc_loss = dsc_fake_loss + dsc_real_loss + norm_loss
 
-        # gen_loss = -dsc_fake_loss
-        gen_loss = T.nn.l2_loss(real_data - fake_data)
+        gen_loss = -dsc_fake_loss
+        # gen_loss = T.nn.l2_loss(real_data - fake_data)
 
         # Create optimizers for generator and discriminator.
         gen_op = T.train.AdamOptimizer(self.gen_lr).minimize(gen_loss, var_list=generator_variables)

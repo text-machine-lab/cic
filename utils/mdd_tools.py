@@ -1,9 +1,11 @@
 """Functions and constants related to the Cornell Movie Dialogues corpus for loading
 and manipulating conversational data."""
 import gensim
+import numpy as np
+
+import cic.utils.squad_tools as sdt
 
 DELIMITER = ' +++$+++ '
-
 
 def construct_examples_from_conversations_and_messages(conversations, id_to_message, max_message_length=None):
     examples = []
@@ -15,7 +17,8 @@ def construct_examples_from_conversations_and_messages(conversations, id_to_mess
             if id_to_message[first_message_id] is not None and id_to_message[second_message_id] is not None:
                 each_message = id_to_message[first_message_id][-1]
                 each_response = id_to_message[second_message_id][-1]
-                if max_message_length is None or len(each_message) <= max_message_length and len(each_response) <= max_message_length:
+                if max_message_length is None or len(each_message) <= max_message_length and len(
+                        each_response) <= max_message_length:
                     examples.append([each_message, each_response])
     return examples
 
@@ -94,7 +97,7 @@ def load_messages_from_cornell_movie_lines_by_id(id_to_message, movie_lines_file
             pass
 
 
-def build_vocabulary_from_messages(id_to_message, max_vocab_len=None):
+def build_vocabulary_from_messages(id_to_message, max_vocab_len=None, unk='<UNK>', stop='<STOP>'):
     """Given dictionary mapping from message ids to
     message strings, produce a vocabulary of all words
     and return as mapping from each word to its corresponding
@@ -106,9 +109,54 @@ def build_vocabulary_from_messages(id_to_message, max_vocab_len=None):
         each_message_data = id_to_message[key]
         if each_message_data is not None:
             documents.append(each_message_data[-1])
-    dictionary = gensim.corpora.Dictionary([['']], prune_at=None)
-    dictionary.add_documents(documents, prune_at=max_vocab_len)
-    dictionary.add_documents([['<UNK>']], prune_at=None)
+    dictionary = gensim.corpora.Dictionary()
+    dictionary.add_documents(documents, prune_at=None)
+    dictionary.filter_extremes(keep_n=max_vocab_len, no_below=0, no_above=1.0)
 
-    vocab_dict = dictionary.token2id
-    return vocab_dict
+    vocab = dictionary.token2id
+
+    # add unknown token
+    vocab[unk] = len(vocab)
+
+    if stop not in vocab:
+        vocab[stop] = len(vocab)
+
+    # add no token as index zero
+    inv_vocab = sdt.invert_dictionary(vocab)
+    vocab[inv_vocab[0]] = len(vocab)
+    vocab[''] = 0
+
+    return vocab
+
+
+def conversations_to_numpy(convos, id_to_message, vocab, N, max_s_len, stop='<STOP>', unk='<UNK>',
+                           add_stop=True):
+    """Convert conversations to a numpy representation using
+    a provided vocabulary."""
+
+    np_conversations = np.zeros([len(convos), N, max_s_len], dtype=int)
+    for i in range(len(convos)):
+        msg_ids = convos[i][3]
+        msg_infos = [id_to_message[msg_id] for msg_id in msg_ids]
+        msgs = [msg_info[4] for msg_info in msg_infos if msg_info is not None]
+
+        if len(msg_infos) != len(msgs):
+            # info was not provided for some message in this conversation
+            # skip this convo
+            continue
+
+        for j in range(len(msgs)):
+            msg_tokens = msgs[j]
+
+            if add_stop:
+                msg_tokens += [stop]
+
+            for k in range(len(msg_tokens)):
+                token = msg_tokens[k]
+                if j < N and k < max_s_len:
+                    if token in vocab:
+                        np_conversations[i, j, k] = vocab[token]
+                    else:
+                        np_conversations[i, j, k] = vocab[unk]
+
+    return np_conversations
