@@ -7,9 +7,9 @@ import cic.paths as paths
 import spacy
 import numpy as np
 
-class CornellMovieHistoryDataset(Dataset):
+class CornellMovieHistoryUtteranceDataset(Dataset):
 
-    def __init__(self, n=5, num_convos=None, max_vocab=10000, max_s_len=10):
+    def __init__(self, n=5, num_convos=None, max_vocab=10000, max_s_len=10, stop_token='<STOP>'):
 
         convos, id_to_msg = mddt.load_cornell_movie_dialogues_dataset(paths.CORNELL_MOVIE_CONVERSATIONS_FILE,
                                                                       max_conversations_to_load=num_convos)
@@ -32,6 +32,8 @@ class CornellMovieHistoryDataset(Dataset):
 
         convos = rm_convos_greater_max_len(convos, id_to_msg, max_s_len)
 
+        #examples = self.build_examples_from_convos(convos, id_to_msg)
+
         print(convos[0])
         for index, key in enumerate(id_to_msg):
             print(key)
@@ -39,12 +41,16 @@ class CornellMovieHistoryDataset(Dataset):
 
             if index > 10:
                 break
+
         # build vocabulary
         self.vocab = mddt.build_vocabulary_from_messages(id_to_msg, max_vocab_len=max_vocab)
         self.inv_vocab = invert_dictionary(self.vocab)
 
         self.np_convos = mddt.conversations_to_numpy(convos, id_to_msg, self.vocab, n, max_s_len,
                                                        add_stop=False)
+
+    def build_examples_from_convos(self):
+        pass
 
     def __len__(self):
         return self.np_convos.shape[0]

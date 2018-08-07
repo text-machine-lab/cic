@@ -8,7 +8,7 @@ import cic.utils.squad_tools as sdt
 
 from cic import paths
 from cic.models.autoencoder import AutoEncoder
-from cic.datasets import cornell_movie_sentences as cmd
+from cic.datasets import cmd_sentences as cmd
 
 RESTORE_FROM_SAVE = False
 SAVE_DIR = './data/autoencoder/first/'

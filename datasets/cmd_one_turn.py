@@ -10,7 +10,7 @@ class CornellMovieConversationDataset(arcadian.dataset.Dataset):
         self.stop_token = stop_token
         self.max_s_len = max_s_len
 
-        self.examples, self.messages, self.responses, self.vocab, self.inverse_vocab\
+        self.examples, self.messages, self.responses, self.vocab, self.inv_vocab\
             = cic.models.old_chat_model.preprocess_all_cornell_conversations(self.nlp, reverse_inputs=reverse_inputs,
                                                                              verbose=True,
                                                                              stop_token=stop_token,

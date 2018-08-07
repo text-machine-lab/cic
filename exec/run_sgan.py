@@ -3,6 +3,8 @@
 from sacred import Experiment
 import os
 from cic.models.rnet_gan import ResNetGAN, GaussianRandomDataset, GaussianInterpolationDataset
+from cic.models.lstm_rnet_gan import LSTMResNetGAN
+from cic.models.tanh_gan import TanhResNetGAN
 from cic.datasets.latent_ae import LatentDataset
 from cic.datasets.book_corpus import TorontoBookCorpus
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
@@ -20,25 +22,27 @@ def config():
     rnn_size = 600
     regen_latent_ae = False
     max_number_of_sentences = 2000000
-    num_gen_layers = 40
-    num_dsc_layers = 40
+    num_gen_layers = 30
+    num_dsc_layers = 30
     sentence_gan_save_dir = os.path.join(cic.paths.DATA_DIR, 'sentence_gan')
-    num_epochs = 100
+    num_epochs = 30
     restore = False  # restore sentence GAN from checkpoint
     gen_learning_rate = 0.0001
     dsc_learning_rate = 0.0001
     max_len = 20
     keep_prob = 1.0
-    num_dsc_trains = 5  # number of times to train discriminator for every train of the generator
+    num_dsc_trains = 30  # number of times to train discriminator for every train of the generator
     num_sents_gen = 2000 # number of examples to generate for evaluation
     save_gen_sents = True  # save generated sentences for use in external scripts
     num_interpolates = 20  # number of interpolate sentences to generate for viewing
     intpol_scale = .01  # measure of distance between points in interpolation
+    lstm_generator = False
 
 @ex.automain
 def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, num_dsc_layers,
          sentence_gan_save_dir, num_epochs, restore, gen_learning_rate, num_interpolates, intpol_scale,
-         dsc_learning_rate, keep_prob, max_len, num_dsc_trains, rnn_size, num_sents_gen, save_gen_sents):
+         dsc_learning_rate, keep_prob, max_len, num_dsc_trains, rnn_size, num_sents_gen, save_gen_sents,
+         lstm_generator):
     print('Running program')
 
     # If we will reconstruct latent dataset, construct ukwac dataset and encoder portion of pretrained autoencoder.
@@ -76,12 +80,18 @@ def main(code_size, regen_latent_ae, max_number_of_sentences, num_gen_layers, nu
 
     # Construct SentenceGAN.
     print('Constructing Sentence GAN')
-
-    gan = ResNetGAN(z_size=code_size, num_gen_layers=num_gen_layers,
-                    num_dsc_layers=num_dsc_layers,
-                    num_dsc_trains=num_dsc_trains,
-                    save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
-                    restore=restore, out_size=code_size)
+    if lstm_generator:
+        gan = LSTMResNetGAN(z_size=code_size, num_gen_layers=num_gen_layers,
+                            num_dsc_layers=num_dsc_layers,
+                            num_dsc_trains=num_dsc_trains,
+                            save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
+                            restore=restore, out_size=code_size)
+    else:
+        gan = TanhResNetGAN(z_size=code_size, num_gen_layers=num_gen_layers,
+                        num_dsc_layers=num_dsc_layers,
+                        num_dsc_trains=num_dsc_trains,
+                        save_dir=sentence_gan_save_dir, tensorboard_name='sentence_gan',
+                        restore=restore, out_size=code_size)
 
     # Train SentenceGAN.
     if num_epochs > 0:

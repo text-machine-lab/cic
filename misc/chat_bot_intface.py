@@ -1,6 +1,6 @@
 """An importable file that allows for automatic construction of
 the new chat bot seq-to-seq model."""
-from cic.datasets.cornell_movie_conversation import CornellMovieConversationDataset
+from cic.datasets.cmd_one_turn import CornellMovieConversationDataset
 from cic.models.seq_to_seq import Seq2Seq
 from cic.exec.run_chat_model import generate_response_from_model
 import cic.paths

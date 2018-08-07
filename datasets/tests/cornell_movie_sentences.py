@@ -1,5 +1,5 @@
 import unittest2
-from cic.datasets.cornell_movie_sentences import CornellMovieSentencesDataset
+from cic.datasets.cmd_sentences import CornellMovieSentencesDataset
 import spacy
 import cic.paths
 import numpy as np

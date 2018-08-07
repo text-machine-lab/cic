@@ -5,14 +5,16 @@ import os
 import h5py
 import pickle
 from arcadian.dataset import Dataset
+import random
 
 class TorontoBookCorpus(Dataset):
     def __init__(self, max_s_len, result_path, max_num_s=None, max_part_len=100000,
                  stop_token='<STOP>', regenerate=False, vocab=None, load_to_mem=True,
-                 second_file_first=False, **kwargs):
+                 second_file_first=False, max_vocab_len=None, shuffle=True, **kwargs):
         """Book Corpus provided by Toronto University, with approx. 70 million sentences. Contains
         a single feature 'message' of numpy encoded sentences. Sentences are filtered for min and
-        max lengths, and sentences containing non-alphabetical non-period characters are removed."""
+        max lengths, and sentences containing non-alphabetical non-period characters are removed.
+        If loading entire dataset be sure to set load_to_mem=False so as to keep the full dataset on disk."""
 
         self.stop_token = stop_token
         self.max_num_s = max_num_s
@@ -106,7 +108,7 @@ class TorontoBookCorpus(Dataset):
 
                     converter = TextDataset(strings, max_s_len, result_save_path=None, regenerate=True,
                                             token_to_id=vocab, update_vocab=True, stop_token=stop_token,
-                                            nlp=nlp, **kwargs)
+                                            nlp=nlp, max_vocab_len=max_vocab_len, **kwargs)
 
                     # Check that previous words still have the same indices
                     if vocab is not None:
@@ -152,11 +154,11 @@ class TorontoBookCorpus(Dataset):
 
             assert data.shape[0] == num_read_s + len(converter)
 
-            # Get ready to index dataset
-            if not load_to_mem:
-                self.data = data
-            else:
-                self.data = data.value  # Retrieve numpy array from h5py array (disk to memory)
+            if shuffle:
+                print('Shuffling data')
+                random.shuffle(data)
+
+            self.data = data
 
         else:
             print('Loading dataset from save...')
@@ -171,6 +173,10 @@ class TorontoBookCorpus(Dataset):
 
             with open(vocab_path, 'rb') as f:
                 self.vocab = pickle.load(f)
+
+        # Get ready to index dataset
+        if load_to_mem:
+            self.data = self.data.value  # Retrieve numpy array from h5py array (disk to memory)
 
     def __getitem__(self, index):
         return {'message': self.data[index, :]}

@@ -1,6 +1,6 @@
 """Train and evaluate chat model trained on Cornell Movie Dialogues."""
 import sacred
-from cic.datasets.cornell_movie_conversation import CornellMovieConversationDataset
+from cic.datasets.cmd_one_turn import CornellMovieConversationDataset
 from cic.datasets.text_dataset import convert_numpy_array_to_strings, construct_numpy_from_messages
 from arcadian.dataset import DictionaryDataset
 from cic.models.seq_to_seq import Seq2Seq
@@ -57,9 +57,10 @@ if __name__ == '__main__':
 
         split_frac = 0.99
         split_seed = 'seed'
-        num_val_print = 0  # number of validation responses to print
+        num_val_print = 50  # number of validation responses to print
         max_vocab_len = 10000
         regen = False
+        attention = True
 
         save_dir = os.path.join(cic.paths.DATA_DIR, 'chat_model/')
         cornell_dir = os.path.join(cic.paths.DATA_DIR, 'cornell_convos/')
@@ -67,7 +68,7 @@ if __name__ == '__main__':
         talk_to_bot = False
 
     @ex.automain
-    def main(max_s_len, emb_size, rnn_size, num_epochs, split_frac, num_val_print, regen, n,
+    def main(max_s_len, emb_size, rnn_size, num_epochs, split_frac, num_val_print, regen, n, attention,
              split_seed, save_dir, restore, cornell_dir, talk_to_bot, max_vocab_len, keep_prob):
         print('Starting program')
 
@@ -80,8 +81,8 @@ if __name__ == '__main__':
 
         train_ds, val_ds = ds.split(split_frac, seed=split_seed)
 
-        model = Seq2Seq(max_s_len, len(ds.vocab), emb_size, rnn_size,
-                        save_dir=save_dir, restore=restore, tensorboard_name='chat')
+        model = Seq2Seq(max_s_len, max_s_len, len(ds.vocab), emb_size, rnn_size,
+                        attention=attention, save_dir=save_dir, restore=restore, tensorboard_name='chat')
 
         if num_epochs > 0:
             model.train(train_ds, num_epochs=num_epochs, params={'keep_prob': keep_prob})

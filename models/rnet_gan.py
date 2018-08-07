@@ -258,7 +258,7 @@ class ResNetGAN(arcadian.gm.GenericModel):
 
 
 
-def build_linear_layer(name, input_tensor, output_size, xavier=False):
+def build_linear_layer(name, input_tensor, output_size, xavier=False, stddev=0.01):
     """Build linear layer by creating random weight matrix and bias vector,
     and applying them to input. Weights initialized with random normal
     initializer.
@@ -274,7 +274,7 @@ def build_linear_layer(name, input_tensor, output_size, xavier=False):
     if xavier:
         initializer = T.contrib.layers.xavier_initializer(uniform=False)
     else:
-        initializer = T.random_normal_initializer(stddev=0.01)
+        initializer = T.random_normal_initializer(stddev=stddev)
 
     input_size = input_tensor.get_shape()[-1]  #tf.shape(input_tensor)[1]
     with T.variable_scope(name):

@@ -42,7 +42,8 @@ class NeuralLanguageModelTraining(GenericModel):
         self.i.update({'message': self.tf_messages})
 
         self.o.update({'prediction': tf_message_prediction,
-                             'probabilities': tf_message_prob})
+                       'probabilities': tf_message_prob,
+                       'embs': self.tf_learned_embeddings})
 
         self.load_scopes = ['LANGUAGE_MODEL']
 
@@ -116,6 +117,13 @@ class NeuralLanguageModelTraining(GenericModel):
     def action_per_epoch(self, output_tensor_dict, epoch_index, is_training, params, **kwargs):
 
         print('Loss: %s' % np.mean(output_tensor_dict['loss']))
+
+        # if 'embs_save_dir' in kwargs:
+        #     embs_save_dir = kwargs['embs_save_dir']
+        #
+        #     if embs_save_dir is not None:
+        #         embs = self.predict(None, outputs=['embs'])
+        #         np.save(embs_save_dir, embs)
 
         return True
 

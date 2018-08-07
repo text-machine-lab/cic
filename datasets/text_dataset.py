@@ -11,7 +11,8 @@ import arcadian.dataset
 class TextDataset(arcadian.dataset.Dataset):
     def __init__(self, strings, max_length, min_length=None, result_save_path=None, token_to_id=None,
                  stop_token='<STOP>', unk_token='<UNK>', regenerate=False, max_num_s=None,
-                 vocab_min_freq=0, keep_unk_sentences=True, update_vocab=True, nlp=None):
+                 vocab_min_freq=0, keep_unk_sentences=True, update_vocab=True, nlp=None,
+                 max_vocab_len=None):
         """Helper class to create datasets of strings. Tokenizes strings, builds a vocabulary of tokens and
         converts all strings into a large numpy array of indices.
 
@@ -69,7 +70,7 @@ class TextDataset(arcadian.dataset.Dataset):
 
             if update_vocab:
                 # Generate vocabulary ourselves.
-                new_token_to_id, _ = create_vocabulary(self.strings, no_below=vocab_min_freq)
+                new_token_to_id, _ = create_vocabulary(self.strings, no_below=vocab_min_freq, max_len=max_vocab_len)
 
                 # Add stop token to vocabulary
                 vocab_size = len(self.token_to_id)
@@ -191,7 +192,7 @@ class TextDataset(arcadian.dataset.Dataset):
         return len(self.np_messages)
 
 
-def create_vocabulary(messages, no_below=2):
+def create_vocabulary(messages, no_below=2, max_len=None):
     """Splits messages into tokens. When a new token is discovered,
     adds that token to a growing vocabulary. Each token is associated with
     an index.
@@ -199,6 +200,7 @@ def create_vocabulary(messages, no_below=2):
     Arguments:
         - no_below: prunes vocab terms which appear in less than no_below messages
         - token_to_id: previous vocabulary to build off of
+        - max_len: maximum length of vocabulary
 
     Returns: A dictionary mapping each token to its corresponding index, and a
     dictionary mapping each index to its corresponding token."""
@@ -207,7 +209,7 @@ def create_vocabulary(messages, no_below=2):
 
     # Build a vocabulary
     dictionary = gensim.corpora.Dictionary(documents=message_tokens)
-    dictionary.filter_extremes(no_below=no_below, no_above=1.0)
+    dictionary.filter_extremes(no_below=no_below, no_above=1.0, keep_n=max_len)
 
     token_to_id = dictionary.token2id
     id_to_token = {v: k for k, v in token_to_id.items()}

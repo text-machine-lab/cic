@@ -1,4 +1,4 @@
-from cic.datasets.cornell_movie_conversation import CornellMovieConversationDataset
+from cic.datasets.cmd_one_turn import CornellMovieConversationDataset
 from cic.datasets.text_dataset import convert_numpy_array_to_strings
 import numpy as np
 
@@ -15,11 +15,11 @@ for index in range(len(ds)):
     np_message = np.reshape(example['message'], [1, -1])
     np_response = np.reshape(example['response'], [1, -1])
 
-    reconst_message = convert_numpy_array_to_strings(np_message, ds.inverse_vocab,
-                                                     stop_token=ds.stop_token, keep_stop_token=True )[0]
-
-    reconst_response = convert_numpy_array_to_strings(np_response, ds.inverse_vocab,
+    reconst_message = convert_numpy_array_to_strings(np_message, ds.inv_vocab,
                                                      stop_token=ds.stop_token, keep_stop_token=True)[0]
+
+    reconst_response = convert_numpy_array_to_strings(np_response, ds.inv_vocab,
+                                                      stop_token=ds.stop_token, keep_stop_token=True)[0]
 
 
     if message != reconst_message:
